@@ -1,0 +1,105 @@
+1. Create traj data 
+python -m sandbox.mack.run_simple --env simple_tag
+
+###
+@click.option('--logdir', type=click.STRING, default='/atlas/u/lantaoyu')
+@click.option('--env', type=click.Choice(['simple', 'simple_speaker_listener',
+                                          'simple_crypto', 'simple_push',
+                                          'simple_tag', 'simple_spread',
+'simple_adversary']))
+@click.option('--lr', type=click.FLOAT, default=0.1)
+@click.option('--seed', type=click.INT, default=1)
+@click.option('--batch_size', type=click.INT, default=1000)
+@click.option('--atlas', is_flag=True, flag_value=True)
+###
+
+2. Create pkl file
+Write log file name to path in irl/renoer.py
+python -m irl.render --env simple_tag 
+
+###
+@click.option('--env', type=click.STRING)
+@click.option('--image', is_flag=True, flag_value=True)
+###
+
+3. Execute program
+python -m irl.mack.run_mack_airl --env simple_tag --expert_path /atlas/u/lantaoyu/exps/mack/simple_tag/l-0.1-b-1000/seed-1/checkpoint55000-100tra.pkl
+
+###
+@click.option('--logdir', type=click.STRING, default='/atlas/u/lantaoyu/exps')
+@click.option('--env', type=click.STRING, default='simple_spread')
+@click.option('--expert_path', type=click.STRING,
+              default='/atlas/u/lantaoyu/projects/MA-AIRL/mack/simple_spread/l-0.1-b-1000/seed-1/checkpoint20000-1000tra.pkl')
+@click.option('--seed', type=click.INT, default=1)
+@click.option('--traj_limitation', type=click.INT, default=200)
+@click.option('--ret_threshold', type=click.FLOAT, default=-10)
+@click.option('--dis_lr', type=click.FLOAT, default=0.1)
+@click.option('--disc_type', type=click.Choice(['decentralized',
+'decentralized-all']),
+              default='decentralized')
+@click.option('--bc_iters', type=click.INT, default=500)
+@click.option('--l2', type=click.FLOAT, default=0.1)
+@click.option('--d_iters', type=click.INT, default=1)
+@click.option('--rew_scale', type=click.FLOAT, default=0)
+###
+
+4. Replay
+Write log file name to path in irl/renoer.py
+python -m irl.render --env simple_tag --image
+
+5. Confirm reward function
+python create_graphs.py
+
+MA-AIRL
+Expert
+1. How to give expert in ma-airl model.
+2. Is expert policy or trajectories? What type of data is expert?
+3. expert handle in dataset.py
+######
+simple_tag
+
+traj_data[0].keys() = dict_keys(['ob', 'ac', 'rew', 'ep_ret', 'all_ob'])
+ob:observation, ac:action, rew:reward, ep_ret:累積reward
+num_trajs = len(traj_data) = 100  (render.py in irl)
+num_agents = len(traj_data['ob']) = 4
+max_step = len(traj_data['ob'][0]) = 50 (render.py in irl or Done func in simple_tag)
+num_obs = len(traj_data['ob'][0][0]) = 16
+
+###
+obs = np.concatenate([agent.state.p_vel] + [agent.state.p_pos] + entity_pos + other_pos + other_vel)
+    = self vel(1) + self pos(2) + landmarks pos(2*2) + other pos(2*3) + other
+vel(1*3)
+###
+######
+
+######
+simple_spread
+
+###
+obs = np.concatenate([agent.state.p_vel] + entity_pos + other_pos + comm) 
+reward = ランドマークとエージェントの距離の最小値のマイナス = ランドマークとエージェントの距離の最小化
+for l in world.landmarks:
+    dists = [np.sqrt(np.sum(np.square(a.state.p_pos - l.state.p_pos))) for a in world.agents]
+    rew -= min(dists)
+###
+######
+
+Envs
+1. How to access to environment.
+Create by make_model function -> make easy by making Maze env in
+multi-agent-particle-envs.
+2. Action
+action_space = dim.p*2+1
+[1,0,0,0,0] = Stay
+[0,1,0,0,0] = Right
+[0,0,1,0,0] = Left
+[0,0,0,1,0] = Up
+[0,0,0,0,1] = Down
+
+Learning
+Policy
+1. CategoricalPolicy
+2. GaussianPolicy
+3. MultiCategoricalPolicy
+
+multi-agent-particle-envs
