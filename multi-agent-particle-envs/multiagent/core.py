@@ -98,6 +98,7 @@ class World(object):
         self.contact_force = 1e+2
         self.contact_margin = 1e-3
         self.time = 0
+        self.my_discrete_world = None
 
     # return all entities in the world
     @property
@@ -119,15 +120,19 @@ class World(object):
         # set actions for scripted agents 
         for agent in self.scripted_agents:
             agent.action = agent.action_callback(agent, self)
-        # gather forces applied to entities
-        p_force = [None] * len(self.entities)
-        # apply agent physical controls
-        p_force = self.apply_action_force(p_force)
-        # apply environment forces
-        p_force = self.apply_environment_force(p_force)
-        # integrate physical state
-        self.integrate_state(p_force)
-        # update agent state
+        if self.my_discrete_world:
+            for agent in self.agents:
+                self.my_update_agent_state(agent)  
+        else:        
+            # gather forces applied to entities
+            p_force = [None] * len(self.entities)
+            # apply agent physical controls
+            p_force = self.apply_action_force(p_force)
+            # apply environment forces
+            p_force = self.apply_environment_force(p_force)
+            # integrate physical state
+            self.integrate_state(p_force)
+            # update agent state
         for agent in self.agents:
             self.update_agent_state(agent)
         self.time += 1
@@ -169,7 +174,12 @@ class World(object):
                     entity.state.p_vel = entity.state.p_vel / np.sqrt(np.square(entity.state.p_vel[0]) +
                                                                   np.square(entity.state.p_vel[1])) * entity.max_speed
             entity.state.p_pos += entity.state.p_vel * self.dt
+            entity.state.p_pos += entity.state.p_vel * self.dt
 
+    # integrate physical state
+    def my_update(self, agent):
+        agent.state.p_pos += agent.action.u
+        
     def update_agent_state(self, agent):
         # set communication state (directly for now)
         if agent.silent:
@@ -177,7 +187,7 @@ class World(object):
         else:
             noise = np.random.randn(*agent.action.c.shape) * agent.c_noise if agent.c_noise else 0.0
             agent.state.c = agent.action.c + noise      
-
+    
     # get collision forces for any contact between two entities
     def get_collision_force(self, entity_a, entity_b):
         if (not entity_a.collide) or (not entity_b.collide):
