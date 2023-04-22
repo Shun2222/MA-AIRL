@@ -19,7 +19,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu, discrete, grid_size):
     def create_env(rank):
         def _thunk():
-            env = make_env.make_env(env_id, discrete, grid_size)
+            env = make_env.make_env(env_id, discrete_env=discrete, grid_size=grid_size)
             env.seed(seed + rank)
             env = bench.Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)),
                                 allow_early_resets=True)
