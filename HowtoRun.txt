@@ -1,5 +1,6 @@
 1. Create traj data 
 python -m sandbox.mack.run_simple --env simple_tag
+python -m sandbox.mack.run_est_reward --env simple_speaker_listener --logdir /irl/test --rewdir \atlas\u\lantaoyu\exps\airl\simple_speaker_listener\decentralized\s-200\l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0\seed-1/ --irl_iteration 3000
 
 ###
 @click.option('--logdir', type=click.STRING, default='/atlas/u/lantaoyu')
@@ -23,7 +24,7 @@ python -m irl.render --env simple_tag
 ###
 
 3. Execute program
-python -m irl.mack.run_mack_airl --env simple_tag --expert_path /atlas/u/lantaoyu/exps/mack/simple_tag/l-0.1-b-1000/seed-1/checkpoint55000-100tra.pkl
+python -m irl.mack.run_mack_airl --env simple_tag --expert_path /atlas/u/lantaoyu/exps/mack/simple_tag/l-0.1-b-1000/seed-1/checkpoint01000-100tra.pkl
 
 ###
 @click.option('--logdir', type=click.STRING, default='/atlas/u/lantaoyu/exps')
@@ -40,7 +41,7 @@ python -m irl.mack.run_mack_airl --env simple_tag --expert_path /atlas/u/lantaoy
 @click.option('--bc_iters', type=click.INT, default=500)
 @click.option('--l2', type=click.FLOAT, default=0.1)
 @click.option('--d_iters', type=click.INT, default=1)
-@click.option('--rew_scale', type=click.FLOAT, default=0)
+@click.option('--rew_scale', type=click.FLOAT, default=0)  
 ###
 
 4. Replay
@@ -48,7 +49,14 @@ Write log file name to path in irl/renoer.py
 python -m irl.render --env simple_tag --image
 
 5. Confirm reward function
-python create_graphs.py
+python create_graphs.py --env simple_tag
+
+6. Confirm results
+
+0, 1 are agent number
+reward is estimated reward
+{"nupdates": 30238, "total_timesteps": 30238000, "fps": 1170, "explained_variance 0": -11.982209205627441, "policy_entropy 0": 0.02122282050549984, "policy_loss 0": 0.0007167136645875871, "value_loss 0": 0.0003796979144681245, "pearson 0": 0.8006086569834931, "spearman 0": 0.9388224988216638, "reward 0": -0.0068428716622292995, "explained_variance 1": 0.8300132900476456, "policy_entropy 1": 0.08465230464935303, "policy_loss 1": -0.008579825051128864, "value_loss 1": 0.044064126908779144, "pearson 1": 0.9197493296555507, "spearman 1": 0.9721278956855531, "reward 1": -1.3455829620361328, "total_loss 0": 0.705395519733429, "total_loss 1": 0.6521978974342346}
+
 
 MA-AIRL
 Expert

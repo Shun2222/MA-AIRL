@@ -1,6 +1,6 @@
-import numpy as np
+import numpy as np # physical/external base state of all entites
+from .env_libs import *
 
-# physical/external base state of all entites
 class EntityState(object):
     def __init__(self):
         # physical position
@@ -119,17 +119,22 @@ class World(object):
         # set actions for scripted agents 
         for agent in self.scripted_agents:
             agent.action = agent.action_callback(agent, self)
-        # gather forces applied to entities
-        p_force = [None] * len(self.entities)
-        # apply agent physical controls
-        p_force = self.apply_action_force(p_force)
-        # apply environment forces
-        p_force = self.apply_environment_force(p_force)
-        # integrate physical state
-        self.integrate_state(p_force)
-        # update agent state
+        if self.my_discrete_world:
+            for agent in self.agents:
+                self.my_update_agent_state(agent)  
+        else:        
+            # gather forces applied to entities
+            p_force = [None] * len(self.entities)
+            # apply agent physical controls
+            p_force = self.apply_action_force(p_force)
+            # apply environment forces
+            p_force = self.apply_environment_force(p_force)
+            # integrate physical state
+            self.integrate_state(p_force)
+            # update agent state
         for agent in self.agents:
             self.update_agent_state(agent)
+            self.back_inside_env(agent)
         self.time += 1
 
     # gather agent action forces
@@ -150,6 +155,7 @@ class World(object):
                 [f_a, f_b] = self.get_collision_force(entity_a, entity_b)
                 if(f_a is not None):
                     if(p_force[a] is None): p_force[a] = 0.0
+                    print(f"fa{f_a}, pf{p_force[a]}")
                     p_force[a] = f_a + p_force[a] 
                 if(f_b is not None):
                     if(p_force[b] is None): p_force[b] = 0.0
@@ -169,6 +175,14 @@ class World(object):
                     entity.state.p_vel = entity.state.p_vel / np.sqrt(np.square(entity.state.p_vel[0]) +
                                                                   np.square(entity.state.p_vel[1])) * entity.max_speed
             entity.state.p_pos += entity.state.p_vel * self.dt
+            entity.state.p_pos += entity.state.p_vel * self.dt
+
+    # integrate physical state
+    # grid環境で計算したほうが分かりやすくてよい
+    def my_update_agent_state(self, agent):
+        row_col = pos_to_row_col(self.grid_size, agent.state.p_pos)
+        row_col += np.array([-agent.action.u[1], agent.action.u[0]])
+        agent.state.p_pos = row_col_to_pos(self.grid_size, row_col) 
 
     def update_agent_state(self, agent):
         # set communication state (directly for now)
@@ -177,6 +191,19 @@ class World(object):
         else:
             noise = np.random.randn(*agent.action.c.shape) * agent.c_noise if agent.c_noise else 0.0
             agent.state.c = agent.action.c + noise      
+    
+    def back_inside_env(self, agent):
+        agent.state.p_pos = np.clip(agent.state.p_pos, -1.0, 1.0)
+    
+    def my_resize_entities(self):
+        one_grid_size = np.array([2/self.grid_size[0], 2/self.grid_size[1]]) 
+        radius = np.min(one_grid_size)/2
+        for agent in self.agents:
+            agent.size = radius
+        for landmark in self.landmarks:
+            landmark.size = radius
+
+        
 
     # get collision forces for any contact between two entities
     def get_collision_force(self, entity_a, entity_b):

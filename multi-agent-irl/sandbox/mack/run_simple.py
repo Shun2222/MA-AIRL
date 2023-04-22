@@ -16,10 +16,10 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
-def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu):
+def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu, discrete, grid_size):
     def create_env(rank):
         def _thunk():
-            env = make_env.make_env(env_id)
+            env = make_env.make_env(env_id, discrete, grid_size)
             env.seed(seed + rank)
             env = bench.Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)),
                                 allow_early_resets=True)
@@ -49,7 +49,10 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu)
 @click.option('--batch_size', type=click.INT, default=1000)
 @click.option('--atlas', is_flag=True, flag_value=True)
 @click.option('--iteration', type=click.INT, default=1000)#5e7
-def main(logdir, env, lr, seed, batch_size, atlas, iteration):
+@click.option('--discrete', is_flag=True)
+@click.option('--grid_size', nargs=2, type=int, default=(0, 0))
+
+def main(logdir, env, lr, seed, batch_size, atlas, iteration, discrete, grid_size):
     env_ids = [env]
     lrs = [lr]
     seeds = [seed]
@@ -59,7 +62,7 @@ def main(logdir, env, lr, seed, batch_size, atlas, iteration):
 
     for env_id, seed, lr, batch_size in itertools.product(env_ids, seeds, lrs, batch_sizes):
         train(logdir + '/exps/mack/' + env_id + '/l-{}-b-{}/seed-{}'.format(lr, batch_size, seed),
-              env_id, total_timesteps, lr, batch_size, seed, batch_size // 250)
+              env_id, total_timesteps, lr, batch_size, seed, batch_size // 250, discrete, grid_size)
 
 
 if __name__ == "__main__":

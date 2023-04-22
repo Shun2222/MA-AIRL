@@ -13,7 +13,7 @@ class MultiAgentEnv(gym.Env):
 
     def __init__(self, world, reset_callback=None, reward_callback=None,
                  observation_callback=None, info_callback=None,
-                 done_callback=None, shared_viewer=True):
+                 done_callback=None, shared_viewer=True, discrete_env=False, grid_size=None):
 
         self.world = world
         self.agents = self.world.policy_agents
@@ -26,7 +26,12 @@ class MultiAgentEnv(gym.Env):
         self.info_callback = info_callback
         self.done_callback = done_callback
         # environment parameters
-        self.discrete_action_space = True
+        self.discrete_action_space = not discrete_env
+        self.my_discrete_action_space = discrete_env 
+        self.my_discrete_env = discrete_env
+        self.grid_size = grid_size 
+        if self.my_discrete_action_space and not self.grid_size:
+            NotImplementedError(f'grid_size( {grid_size}) is not implemented.')
         # if true, action is a number 0...N, otherwise action is a one-hot N-dimensional vector
         self.discrete_action_input = False
         # if true, even the action is continuous, action will be performed discretely
@@ -43,6 +48,8 @@ class MultiAgentEnv(gym.Env):
             # physical action space
             if self.discrete_action_space:
                 u_action_space = spaces.Discrete(world.dim_p * 2 + 1)
+            elif self.my_discrete_action_space:
+                u_action_space = spaces.Discrete(4)
             else:
                 u_action_space = spaces.Box(low=-agent.u_range, high=+agent.u_range, shape=(world.dim_p,), dtype=np.float32)
             if agent.movable:
@@ -50,6 +57,8 @@ class MultiAgentEnv(gym.Env):
             # communication action space
             if self.discrete_action_space:
                 c_action_space = spaces.Discrete(world.dim_c)
+            if self.my_discrete_action_space:
+                c_action_space = spaces.Discrete(4)
             else:
                 c_action_space = spaces.Box(low=0.0, high=1.0, shape=(world.dim_c,), dtype=np.float32)
             if not agent.silent:
@@ -86,7 +95,7 @@ class MultiAgentEnv(gym.Env):
         # set action for each agent
         for i, agent in enumerate(self.agents):
             self._set_action(action_n[i], agent, self.action_space[i])
-        # advance world state
+        # advagce world state
         self.world.step()
         # record observation for each agent
         for agent in self.agents:
@@ -174,12 +183,16 @@ class MultiAgentEnv(gym.Env):
                 if self.discrete_action_space:
                     agent.action.u[0] += action[0][1] - action[0][2]
                     agent.action.u[1] += action[0][3] - action[0][4]
+                elif self.my_discrete_action_space: # action is one-hot vec. action = [RIGHT, LEFT, DOWN, UP]
+                    agent.action.u[0] = (action[0][0] - action[0][1])
+                    agent.action.u[1] = (action[0][2] - action[0][3])
                 else:
                     agent.action.u = action[0]
             sensitivity = 5.0
             if agent.accel is not None:
                 sensitivity = agent.accel
-            agent.action.u *= sensitivity
+            if not self.my_discrete_action_space:
+                agent.action.u *= sensitivity
             action = action[1:]
         if not agent.silent:
             # communication action
@@ -328,7 +341,6 @@ class MultiAgentEnv(gym.Env):
         for viewer in self.viewers:
             for geom in self.render_geoms:
                 viewer.add_geom(geom)
-
         results = []
         for i in range(len(self.viewers)):
             from multiagent import rendering

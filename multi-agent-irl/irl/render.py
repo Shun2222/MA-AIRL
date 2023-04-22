@@ -18,14 +18,17 @@ import pickle as pkl
 @click.option('--image', is_flag=True, flag_value=True)
 @click.option('--all', is_flag=True, flag_value=True)
 @click.option('--path', type=click.STRING, default="/atlas/u/lantaoyu/exps/mack/simple_path_finding_single/ENV6_3/l-0.1-b-1000/seed-1/checkpoint03000")
+@click.option('--discrete', is_flag=True)
+@click.option('--grid_size', nargs=2, type=int, default=(0, 0))
 
-def render(env, image, all, path):
+def render(env, image, all, path, discrete, grid_size):
     tf.reset_default_graph()
 
     env_id = env
 
     def create_env():
-        env = make_env.make_env(env_id)
+        env = make_env.make_env(env_id, discrete_env=discrete, grid_size=grid_size)
+        #env = make_env.make_env(env_id)
         env.seed(10)
         # env = bench.Monitor(env, '/tmp/',  allow_early_resets=True)
         set_global_seeds(10)
@@ -42,7 +45,7 @@ def render(env, image, all, path):
     #path = "/atlas/u/lantaoyu/exps/airl/simple_path_finding/env6_3/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-1/m_01400"
     #path = "/atlas/u/lantaoyu/exps//airl/simple_path_finding/decentralized/s-200/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-1/m_07000"  # obs 2 path_finding  
     #path = "/atlas/u/lantaoyu/exps//airl/simple_path_finding_single/decentralized/s-200/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-1/m_01500" #2input single irl
-
+    path = r"/atlas/u/lantaoyu/exps/mack/simple_tag/l-0.1-b-1000/seed-1\checkpoint01100"
     n_agents = len(env.action_space)
     ob_space = env.observation_space
     ac_space = env.action_space
@@ -101,7 +104,7 @@ def render(env, image, all, path):
                 else:
                     img = env.render(mode='rgb_array')
                 images.append(img[0])
-                time.sleep(0.02)
+                time.sleep(0.05)
             if step == max_steps or True in done:
                 done = True
                 step = 0

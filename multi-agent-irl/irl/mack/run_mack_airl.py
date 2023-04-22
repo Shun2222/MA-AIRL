@@ -18,10 +18,10 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu, expert_path,
           traj_limitation, ret_threshold, dis_lr, disc_type='decentralized', bc_iters=500, l2=0.1, d_iters=1,
-          rew_scale=0.1):
+          rew_scale=0.1, discrete, grid_size):
     def create_env(rank):
         def _thunk():
-            env = make_env.make_env(env_id)
+            env = make_env.make_env(env_id, discrete_env=discrete, grid_size=grid_size)
             env.seed(seed + rank)
             env = bench.Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)),
                                 allow_early_resets=True)
@@ -47,7 +47,7 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
 @click.option('--logdir', type=click.STRING, default='/atlas/u/lantaoyu/exps')
 @click.option('--env', type=click.STRING, default='simple_spread')
 @click.option('--expert_path', type=click.STRING,
-              default='/atlas/u/lantaoyu/projects/MA-AIRL/mack/simple_spread/l-0.1-b-1000/seed-1/checkpoint20000-1000tra.pkl')
+              default=r'D:\atlas\u\lantaoyu\exps\mack\simple_tag\l-0.1-b-1000\seed-1\checkpoint01100-100tra.pkl')
 @click.option('--seed', type=click.INT, default=1)
 @click.option('--traj_limitation', type=click.INT, default=200)
 @click.option('--ret_threshold', type=click.FLOAT, default=-10)
@@ -58,8 +58,10 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
 @click.option('--l2', type=click.FLOAT, default=0.1)
 @click.option('--d_iters', type=click.INT, default=1)
 @click.option('--rew_scale', type=click.FLOAT, default=0)
+@click.option('--discrete', is_flag=True)
+@click.option('--grid_size', nargs=2, type=int, default=(0, 0))
 def main(logdir, env, expert_path, seed, traj_limitation, ret_threshold, dis_lr, disc_type, bc_iters, l2, d_iters,
-         rew_scale):
+         rew_scale, discrete, grid_size):
     env_ids = [env]
     lrs = [0.1]
     seeds = [seed]
@@ -70,7 +72,7 @@ def main(logdir, env, expert_path, seed, traj_limitation, ret_threshold, dis_lr,
               traj_limitation, lr, batch_size, dis_lr, bc_iters, l2, d_iters, rew_scale, seed),
               env_id, 5e7, lr, batch_size, seed, batch_size // 250, expert_path,
               traj_limitation, ret_threshold, dis_lr, disc_type=disc_type, bc_iters=bc_iters, l2=l2, d_iters=d_iters,
-              rew_scale=rew_scale)
+              rew_scale=rew_scale, discrete, grid_size)
 
 
 if __name__ == "__main__":
