@@ -130,6 +130,7 @@ class Scenario(BaseScenario):
         for o in world.obstacles:
             if self.is_collision(o, agent):
                 rew -= 1
+        if agent.id==3: print(f"rew{rew}, pos{agent.state.p_pos}g{world.goals[agent.id].state.p_pos}")
         return rew
 
     def observation(self, agent, world):
@@ -155,6 +156,7 @@ class Scenario(BaseScenario):
             if agent==a: 
                 if self.is_collision(agent, world.goals[i]):
                     agent.color = np.array((0,1,0,0.5))
+                    goal = world.goals[i]
                 continue
             if self.is_collision(agent, a):
                 agent.color = np.array((1,0,0,0.5))

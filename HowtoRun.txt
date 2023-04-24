@@ -110,4 +110,3 @@ Policy
 2. GaussianPolicy
 3. MultiCategoricalPolicy
 
-multi-agent-particle-envs

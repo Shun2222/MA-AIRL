@@ -35,17 +35,8 @@ def render(env, image, all, path, discrete, grid_size):
         return env
 
     env = create_env()
-    #path = '/atlas/u/lantaoyu/exps/airl/simple_spread/decentralized/s-200/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-2/m_24000' # origin
-    path = "/atlas/u/lantaoyu/exps/mack/simple_tag/l-0.1-b-1000/seed-1/checkpoint55000" # data simple_tag
-    path = r"\atlas\u\lantaoyu\exps\airl\simple_tag\decentralized\s-200\l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0\seed-1\m_02000"
-    #path = "/atlas/u/lantaoyu/exps/mack/simple_spread/l-0.1-b-1000/seed-1/checkpoint55000"  #data simple_spread
-    #path = "/atlas/u/lantaoyu/exps/mack/simple_path_finding/ENV6/l-0.1-b-1000/seed-1/checkpoint08800"  #data simple_path_finding
-    path = r"\atlas\u\lantaoyu\exps\airl\simple_tag\decentralized\s-10000\l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0\seed-1/m_33000" # irl
-    #path = "/atlas/u/lantaoyu/exps/airl/simple_path_finding/env6_3/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-1/m_01400" env6_3 res
-    #path = "/atlas/u/lantaoyu/exps/airl/simple_path_finding/env6_3/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-1/m_01400"
-    #path = "/atlas/u/lantaoyu/exps//airl/simple_path_finding/decentralized/s-200/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-1/m_07000"  # obs 2 path_finding  
     #path = "/atlas/u/lantaoyu/exps//airl/simple_path_finding_single/decentralized/s-200/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-1/m_01500" #2input single irl
-    path = r"/atlas/u/lantaoyu/exps/mack/simple_tag/l-0.1-b-1000/seed-1\checkpoint01100"
+    path = r"/atlas/u/lantaoyu/exps/mack/simple_path_finding_single/l-0.1-b-1000/seed-1\checkpoint02400"
     n_agents = len(env.action_space)
     ob_space = env.observation_space
     ac_space = env.action_space

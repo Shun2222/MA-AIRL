@@ -7,6 +7,8 @@ class EntityState(object):
         self.p_pos = None
         # physical velocity
         self.p_vel = None
+        # discrete row and col 
+        self.d_rc = None
 
 # state of agents (including communication and internal/mental state)
 class AgentState(EntityState):
@@ -177,12 +179,20 @@ class World(object):
             entity.state.p_pos += entity.state.p_vel * self.dt
             entity.state.p_pos += entity.state.p_vel * self.dt
 
-    # integrate physical state
+    # The limit of out of grid parcent is p parcent.
+    # Then, lower p*2/n is the number we can ignore.(n is the max of one grid size)
+    # We can ignore n/(p*2) decimal
     # grid環境で計算したほうが分かりやすくてよい
     def my_update_agent_state(self, agent):
+        decimal = 100 * np.max(self.grid_size)/2
+        decimal = len(str(abs(decimal))) - 1 
+        decimal = decimal if decimal > 1 else  2
+        # update position
         row_col = pos_to_row_col(self.grid_size, agent.state.p_pos)
         row_col += np.array([-agent.action.u[1], agent.action.u[0]])
-        agent.state.p_pos = row_col_to_pos(self.grid_size, row_col) 
+        agent.state.d_rc = row_col
+        pos =  row_col_to_pos(self.grid_size, row_col) 
+        agent.state.p_pos = np.round(pos, decimals=decimal) 
 
     def update_agent_state(self, agent):
         # set communication state (directly for now)
@@ -210,7 +220,7 @@ class World(object):
         if (not entity_a.collide) or (not entity_b.collide):
             return [None, None] # not a collider
         if (entity_a is entity_b):
-            return [None, None] # don't collide against itself
+            return [None, None] #edon't collide against itself
         # compute actual distance between entities
         delta_pos = entity_a.state.p_pos - entity_b.state.p_pos
         dist = np.sqrt(np.sum(np.square(delta_pos)))
