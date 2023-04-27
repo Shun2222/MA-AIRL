@@ -110,3 +110,25 @@ Policy
 2. GaussianPolicy
 3. MultiCategoricalPolicy
 
+めも
+irl/mack/airl.py 
+    555: runer開始
+        362: model.step
+            286: policy（74:step_modelに格納されてる）から行動
+        373: env.step
+        489: return mb_obs, mb_obs_next, mb_states, mb_returns, mb_report_returns, mb_masks, mb_actions, \
+                   mb_values, mb_all_obs, mb_all_nobs, mh_actions, mh_all_actions, mb_rewards, mb_true_rewards, mb_true_returns
+
+    588: train discriminator 開始  (irl/mack/kfac_discriminator_airl)
+        66: reward = relu(tf.concat([obs, act]))
+        81: loss = -tf.reduce_mean(labels*(log_p_tau - log_pq) + (1 - labels) * (log_q_tau - log_pq))  (expertである確率, Agentである確率の最大化)
+            76: log_q_tau = lprobs
+            77: log_p_tau = reward(obs) + gamma*V(n_obs) - V(obs) = relu(obs) + gamma * relu(nobs) - relu(obs) (状態の価値の予測値との差)
+            78: log_pq = tf.reduce_log_sumexp([log_p_tau, log_q_tau]) (log各行の数 )
+            84: loss += tf.add_n([tf.nn_l2_less(v) for v in params]) * ratio
+        101: optim = tf.train.Adam().apply_grad([grads, params]) 
+            83: params = find_trainable_variables() (rl/acktr/utils)
+            87: grads = tf.gradiant(loss, params)
+
+    182: train generator 開始 (irl/mack/airl.py)
+       148: optimize func for policy(generator) 
