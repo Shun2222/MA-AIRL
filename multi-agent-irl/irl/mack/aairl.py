@@ -61,7 +61,7 @@ class Model(object):
         self.model2 = train_model = []
         self.pg_fisher = pg_fisher_loss = []
         self.logits = logits = []
-        sample_net = []
+        self.sample_net = sample_net = []
         self.vf_fisher = vf_fisher_loss = []
         self.joint_fisher = joint_fisher_loss = []
         self.lld = lld = []
@@ -692,6 +692,7 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                     logger.record_tabular("policy_entropy %d" % k, float(policy_entropy[k]))
                     logger.record_tabular("policy_loss %d" % k, float(policy_loss[k]))
                     logger.record_tabular("value_loss %d" % k, float(value_loss[k]))
+                    logger.record_tabular("archive_num %d" %k, int(archive_num[k]))
                     try:
                         logger.record_tabular('pearson %d' % k, float(
                             pearsonr(report_rewards[k].flatten(), mh_true_returns[k].flatten())[0]))
