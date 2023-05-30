@@ -585,8 +585,6 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                           nobs_flag=True)
         for k in range(num_agents):
             if not arc_obs[k]: continue
-            print(f"obs {arc_obs[k]}")
-            print(f"acs {arc_actions[k]}")
             mb_arc_obs[k] += arc_obs[k]
             mb_arc_actions[k] += arc_actions[k]
             mb_arc_obs_next[k] += arc_obs_next[k]
@@ -596,8 +594,6 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
         print(f'archive num: {archive_num}')
         
         if all(archive_num[0:2]>0): # only simple tag
-            print(f"mb arc obs {mb_arc_obs[0:2]}")
-            print(f"obs 0 {mb_arc_obs[0]}")
             archive_buffer = Dset(np.array(mb_arc_obs[0:3]), np.array(mb_arc_actions[0:3]), np.array(mb_arc_obs_next[0:3]), np.array(mb_arc_all_obs[0:3]), np.array(mb_arc_values[0:3]), randomize=True, num_agents=num_agents-1, nobs_flag=True)
 
         d_minibatch = nenvs * nsteps
