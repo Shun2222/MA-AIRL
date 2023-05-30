@@ -170,6 +170,8 @@ class MADataSet(object):
         else:
             raise NotImplementedError
 
+
+
     def plot(self):
         import matplotlib.pyplot as plt
         plt.hist(self.rets)
