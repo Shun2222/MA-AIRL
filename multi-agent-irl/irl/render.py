@@ -59,7 +59,7 @@ def render(env, image, all, path, discrete, grid_size):
 
     images = []
     sample_trajs = []
-    num_trajs = 100
+    num_trajs = 10
     max_steps = 50
     avg_ret = [[] for _ in range(n_agents)]
 
