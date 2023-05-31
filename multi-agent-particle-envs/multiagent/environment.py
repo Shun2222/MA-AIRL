@@ -276,6 +276,17 @@ class MultiAgentEnv(gym.Env):
             for e, entity in enumerate(self.world.entities):
                 self.render_geoms[e].set_color(*entity.color)
                 self.render_geoms_xform[e].set_translation(*entity.state.p_pos)
+            if self.my_discrete_env:
+                one_grid_size = np.array([2/self.grid_size[0], 2/self.grid_size[1]])
+                for r in range(1, self.grid_size[0]):
+                    geom = self.viewers[i].draw_line([-1, one_grid_size[0]*r-1], [1, one_grid_size[0]*r-1])
+                    geom.set_color(*np.array((0,0,0,0.5)))
+                    self.viewers[i].add_geom(geom)
+                for c in range(1, self.grid_size[1]):
+                    geom = self.viewers[i].draw_line([one_grid_size[1]*c-1, -1], [one_grid_size[1]*c-1, 1])
+                    geom.set_color(*np.array((0,0,0,0.5)))
+                    self.viewers[i].add_geom(geom)
+
             # render to display or array
             results.append(self.viewers[i].render(return_rgb_array = mode=='rgb_array'))
 

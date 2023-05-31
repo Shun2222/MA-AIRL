@@ -39,7 +39,9 @@ def make_env(scenario_name, benchmark=False, discrete_env=False, grid_size=None)
     world.my_discrete_world = True if discrete_env else False
     world.grid_size = grid_size if discrete_env else None
     if discrete_env: 
+        world.set_decimal()
         world.my_resize_entities()
+        world.my_repos_entities()
     
     # create multiagent environment
     if benchmark:

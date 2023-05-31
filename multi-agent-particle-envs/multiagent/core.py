@@ -100,8 +100,8 @@ class World(object):
         self.contact_force = 1e+2
         self.contact_margin = 1e-3
         self.time = 0
+        self.decimal = None
 
-    # return all entities in the world
     @property
     def entities(self):
         return self.agents + self.landmarks
@@ -118,9 +118,14 @@ class World(object):
 
     # update state of the world
     def step(self):
+
+        if self.my_discrete_world: 
+            self.my_repos_entities()
+
         # set actions for scripted agents 
         for agent in self.scripted_agents:
             agent.action = agent.action_callback(agent, self)
+
         if self.my_discrete_world:
             for agent in self.agents:
                 self.my_update_agent_state(agent)  
@@ -136,7 +141,7 @@ class World(object):
             # update agent state
         for agent in self.agents:
             self.update_agent_state(agent)
-            self.back_inside_env(agent)
+            #self.back_inside_env(agent)
         self.time += 1
 
     # gather agent action forces
@@ -184,15 +189,12 @@ class World(object):
     # We can ignore n/(p*2) decimal
     # grid環境で計算したほうが分かりやすくてよい
     def my_update_agent_state(self, agent):
-        decimal = 100 * np.max(self.grid_size)/2
-        decimal = len(str(abs(decimal))) - 1 
-        decimal = decimal if decimal > 1 else  2
         # update position
         row_col = pos_to_row_col(self.grid_size, agent.state.p_pos)
         row_col += np.array([-agent.action.u[1], agent.action.u[0]])
         agent.state.d_rc = row_col
         pos =  row_col_to_pos(self.grid_size, row_col) 
-        agent.state.p_pos = np.round(pos, decimals=decimal) 
+        agent.state.p_pos = np.round(pos, decimals=self.decimal) 
 
     def update_agent_state(self, agent):
         # set communication state (directly for now)
@@ -205,6 +207,12 @@ class World(object):
     def back_inside_env(self, agent):
         agent.state.p_pos = np.clip(agent.state.p_pos, -1.0, 1.0)
     
+    def set_decimal(self):
+        decimal = 100 * np.max(self.grid_size)/2
+        decimal = len(str(abs(decimal))) - 1 
+        decimal = decimal if decimal > 1 else  2
+        self.decimal = decimal
+
     def my_resize_entities(self):
         one_grid_size = np.array([2/self.grid_size[0], 2/self.grid_size[1]]) 
         radius = np.min(one_grid_size)/2
@@ -212,6 +220,16 @@ class World(object):
             agent.size = radius
         for landmark in self.landmarks:
             landmark.size = radius
+
+    def my_repos_entities(self):
+        for agent in self.agents:
+            row_col = pos_to_row_col(self.grid_size, agent.state.p_pos)
+            pos =  row_col_to_pos(self.grid_size, row_col) 
+            agent.state.p_pos = np.round(pos, decimals=self.decimal) 
+        for landmark in self.landmarks:
+            row_col = pos_to_row_col(self.grid_size, landmark.state.p_pos)
+            pos =  row_col_to_pos(self.grid_size, row_col) 
+            landmark.state.p_pos = np.round(pos, decimals=self.decimal) 
 
         
 

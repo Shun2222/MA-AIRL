@@ -130,7 +130,6 @@ class Scenario(BaseScenario):
         for o in world.obstacles:
             if self.is_collision(o, agent):
                 rew -= 1
-        if agent.id==3: print(f"rew{rew}, pos{agent.state.p_pos}g{world.goals[agent.id].state.p_pos}")
         return rew
 
     def observation(self, agent, world):
