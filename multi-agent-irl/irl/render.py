@@ -39,6 +39,7 @@ def render(env, image, all, path, discrete, grid_size):
     path = r"/atlas/u/lantaoyu/exps/mack/simple_path_finding_single/l-0.1-b-1000/seed-1\checkpoint02400"
     path = r"./data/checkpoint01500"
     path = r"data/tag-dist-rew/checkpoint01100"
+    path = r"data/tag-dist-rew/airl/m_15000"
     n_agents = len(env.action_space)
     ob_space = env.observation_space
     ac_space = env.action_space
@@ -60,7 +61,7 @@ def render(env, image, all, path, discrete, grid_size):
 
     images = []
     sample_trajs = []
-    num_trajs = 10
+    num_trajs = 1000
     max_steps = 50
     avg_ret = [[] for _ in range(n_agents)]
 
