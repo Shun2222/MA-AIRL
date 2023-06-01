@@ -442,7 +442,7 @@ class Runner(object):
                     arc_obs[k].append(np.copy(mb_obs[k][step]).tolist())
                     act = mb_actions[k].reshape(1, mb_obs[k].shape[0])
                     arc_actions[k].append(onehot(np.copy(act[k][step]), self.n_actions[k]).tolist())
-                    v = mb_actions[k].reshape(1, mb_obs[k].shape[0])
+                    v = mb_values[k].reshape(1, mb_obs[k].shape[0])
                     arc_values[k].append(v[k][step])
                     arc_obs_next[k].append(np.copy(mb_obs_next[k][step]).tolist())
                 
