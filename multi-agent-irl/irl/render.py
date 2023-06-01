@@ -36,10 +36,10 @@ def render(env, image, all, path, discrete, grid_size):
 
     env = create_env()
     #path = "/atlas/u/lantaoyu/exps//airl/simple_path_finding_single/decentralized/s-200/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-1/m_01500" #2input single irl
-    path = r"/atlas/u/lantaoyu/exps/mack/simple_path_finding_single/l-0.1-b-1000/seed-1\checkpoint02400"
-    path = r"./data/checkpoint01500"
-    path = r"data/tag-dist-rew/checkpoint01100"
-    path = r"data/tag-dist-rew/airl/m_15000"
+    #path = r"/atlas/u/lantaoyu/exps/mack/simple_path_finding_single/l-0.1-b-1000/seed-1\checkpoint02400"
+    #path = r"./data/checkpoint01500"
+    #path = r"data/tag-dist-rew/checkpoint01100"
+    #path = r"data/tag-dist-rew/airl/m_15000"
     n_agents = len(env.action_space)
     ob_space = env.observation_space
     ac_space = env.action_space

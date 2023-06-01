@@ -155,7 +155,6 @@ class Scenario(BaseScenario):
             if agent==a: 
                 if self.is_collision(agent, world.goals[i]):
                     agent.color = np.array((0,1,0,0.5))
-                    goal = world.goals[i]
                 continue
             if self.is_collision(agent, a):
                 agent.color = np.array((1,0,0,0.5))

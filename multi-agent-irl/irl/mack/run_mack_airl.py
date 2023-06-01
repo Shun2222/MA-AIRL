@@ -63,7 +63,7 @@ def main(logdir, env, expert_path, seed, traj_limitation, ret_threshold, dis_lr,
          rew_scale, discrete, grid_size):
     env_ids = [env]
     lrs = [0.1]
-    seeds = [i for i in range(100)]
+    seeds = [seed]
     batch_sizes = [500]
 
     for env_id, seed, lr, batch_size in itertools.product(env_ids, seeds, lrs, batch_sizes):

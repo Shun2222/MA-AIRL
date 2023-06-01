@@ -12,7 +12,7 @@ of size (env.world.dim_p + env.world.dim_c, 1). Physical actions precede
 communication actions in this array. See environment.py for more details.
 """
 
-def make_env(scenario_name, benchmark=False, discrete_env=False, grid_size=None):
+def make_env(scenario_name, benchmark=False):
     '''
     Creates a MultiAgentEnv object as env. This can be used similar to a gym
     environment by calling env.reset() and env.step().
@@ -36,19 +36,12 @@ def make_env(scenario_name, benchmark=False, discrete_env=False, grid_size=None)
     scenario = scenarios.load(scenario_name + ".py").Scenario()
     # create world
     world = scenario.make_world()
-    world.my_discrete_world = True if discrete_env else False
-    world.grid_size = grid_size if discrete_env else None
-    if discrete_env: 
-        world.set_decimal()
-        world.my_resize_entities()
-        world.my_repos_entities()
-    
     # create multiagent environment
     if benchmark:
-        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation, scenario.benchmark_data, discrete_env=discrete_env, grid_size=grid_size)
+        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation, scenario.benchmark_data)
     else:
         env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation,
-                            done_callback=scenario.done, discrete_env=discrete_env, grid_size=grid_size)
+                            done_callback=scenario.done)
     return env
 
 
