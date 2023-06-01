@@ -175,7 +175,7 @@ class EnvInfo():
     def __init__(self):
         config_ini = configparser.ConfigParser()
         config_ini.optionxform = str
-        config_ini.read('/MA-AIRL/multi-agent-particle-envs/multiagent/config/config.ini', encoding='utf-8')
+        config_ini.read('../multi-agent-particle-envs/multiagent/config/config.ini', encoding='utf-8')
         ENV = json.loads(config_ini.get("ENV", "ENV_INFO"))
 
         self.num_agents = int(config_ini.get(ENV, "N_AGENTS"))

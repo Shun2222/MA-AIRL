@@ -173,15 +173,11 @@ class Scenario(BaseScenario):
 # dis = discrete, con = continue
 class EnvInfo():
     def __init__(self):
-        config_ini = configparser.ConfigParser()
-        config_ini.optionxform = str
-        config_ini.read('/MA-AIRL/multi-agent-particle-envs/multiagent/config/config.ini', encoding='utf-8')
-        ENV = json.loads(config_ini.get("ENV", "ENV_INFO"))
+        env_info = pickle.load(open('single_pathfinding_jaciii.pkl', 'rb'))
+        self.num_agents = 2
+        self.state_size = [10, 10] 
 
-        self.num_agents = int(config_ini.get(ENV, "N_AGENTS"))
-        self.state_size = json.loads(config_ini.get(ENV, "STATE_SIZE")) 
-
-        self.obstacles_pos = json.loads(config_ini.get(ENV, "OBSTACLE")) 
+        self.obstacles_pos = env_info[2] 
         self.num_obstacles = len(self.obstacles_pos)
         if len(self.obstacles_pos[0])==0:
             self.num_obstacles = 0
@@ -189,7 +185,7 @@ class EnvInfo():
         self.starts_pos = []
         self.goals_pos = []
         for i in range(self.num_agents):
-            agent_info = json.loads(config_ini.get(ENV,"AGENT_START_GOAL_EXPERT"+str(i+1)))
+            agent_info = env_info[i] 
             self.starts_pos.append(agent_info[0][0])
             self.goals_pos.append(agent_info[0][1])
 
