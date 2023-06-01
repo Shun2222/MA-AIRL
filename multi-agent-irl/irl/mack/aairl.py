@@ -438,12 +438,12 @@ class Runner(object):
             mb_dones[k] = mb_dones[k][:, 1:]
             rew = mb_true_rewards[k].reshape(1, mb_obs[k].shape[0])
             for step in range(len(mb_obs[k])):
-                if rew[k][step]==10: # if agent toutched agent, they archive thier info(simple tag)
+                if rew[k][step]>0: # if agent toutched agent, they archive thier info(simple tag)
                     arc_obs[k].append(np.copy(mb_obs[k][step]).tolist())
                     act = mb_actions[k].reshape(1, mb_obs[k].shape[0])
-                    arc_actions[k].append(onehot(np.copy(act[0][step]), self.n_actions[k]).tolist())
+                    arc_actions[k].append(onehot(np.copy(act[k][step]), self.n_actions[k]).tolist())
                     v = mb_actions[k].reshape(1, mb_obs[k].shape[0])
-                    arc_values[k].append(v[0][step])
+                    arc_values[k].append(v[k][step])
                     arc_obs_next[k].append(np.copy(mb_obs_next[k][step]).tolist())
                 
 
