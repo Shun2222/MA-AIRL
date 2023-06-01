@@ -425,9 +425,14 @@ class Runner(object):
             mb_dones[k].append(self.dones[k])
 
         # batch of steps to batch of rollouts
+        traj_obs = [[] for _ in range(self.num_agents)]
+        traj_obs_next = [[] for _ in range(self.num_agents)]
         for k in range(self.num_agents):
-
-        for k in range(self.num_agents):
+            traj_obs[k] = np.asarray(mb_obs[k], dtype=np.float32).swapaxes(1, 0).reshape(self.batch_ob_shape[k])
+            traj_nobs = traj_obs[k].copy()
+            traj_nobs[:-1] = traj_obs[k][1:]
+            traj_nobs[-1] = traj_obs[k][0]
+            traj_obs_next[k] = traj_nobs.copy()
             mb_obs[k] = np.asarray(mb_obs[k], dtype=np.float32).swapaxes(1, 0).reshape(self.batch_ob_shape[k])
             mb_obs_next[k] = np.asarray(mb_obs_next[k], dtype=np.float32).swapaxes(1, 0).reshape(self.batch_ob_shape[k])
             mb_true_rewards[k] = np.asarray(mb_true_rewards[k], dtype=np.float32).swapaxes(1, 0)
@@ -440,7 +445,7 @@ class Runner(object):
             mb_dones[k] = mb_dones[k][:, 1:]
             rew = mb_true_rewards[k].reshape(1, mb_obs[k].shape[0])
             for step in range(len(mb_obs[k])):
-                if rew[k][step]==10: # if agent toutched agent, they archive thier info(simple tag)
+                if rew[k][step]>=expert_: # if agent toutched agent, they archive thier info(simple tag)
                     arc_obs[k].append(np.copy(mb_obs[k][step]).tolist())
                     act = mb_actions[k].reshape(1, mb_obs[k].shape[0])
                     arc_actions[k].append(onehot(np.copy(act[0][step]), self.n_actions[k]).tolist())
