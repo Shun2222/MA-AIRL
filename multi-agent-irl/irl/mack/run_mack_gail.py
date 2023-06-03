@@ -17,10 +17,10 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu, expert_path,
-          traj_limitation, ret_threshold, dis_lr, disc_type='decentralized', bc_iters=500):
+          traj_limitation, ret_threshold, dis_lr, disc_type='decentralized', bc_iters=501, discrete=False, grid_size=None):
     def create_env(rank):
         def _thunk():
-            env = make_env.make_env(env_id)
+            env = make_env.make_env(env_id, discrete_env=discrete, grid_size=grid_size)
             env.seed(seed + rank)
             env = bench.Monitor(env, logger.get_dir() and os.path.join(logger.get_dir(), str(rank)),
                                 allow_early_resets=True)
@@ -53,11 +53,14 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
 @click.option('--dis_lr', type=click.FLOAT, default=0.1)
 @click.option('--disc_type', type=click.Choice(['decentralized', 'centralized', 'single']), default='decentralized')
 @click.option('--bc_iters', type=click.INT, default=500)
-def main(logdir, env, expert_path, atlas, seed, traj_limitation, ret_threshold, dis_lr, disc_type, bc_iters):
+@click.option('--discrete', is_flag=True)
+@click.option('--grid_size', nargs=2, type=int, default=(0, 0))
+
+def main(logdir, env, expert_path, atlas, seed, traj_limitation, ret_threshold, dis_lr, disc_type, bc_iters, discrete, grid_size):
     env_ids = [env]
     lrs = [0.1]
     seeds = [seed]
-    batch_sizes = 500]
+    batch_sizes = [500]
 
     logdir = '/atlas/u/lantaoyu/exps'
 
@@ -65,7 +68,7 @@ def main(logdir, env, expert_path, atlas, seed, traj_limitation, ret_threshold, 
         train(logdir + '/gail/' + env_id + '/' + disc_type + '/s-{}/l-{}-b-{}-d-{}-c-{}/seed-{}'.format(
               traj_limitation, lr, batch_size, dis_lr, bc_iters, seed),
               env_id, 500*1000, lr, batch_size, seed, batch_size // 250, expert_path,
-              traj_limitation, ret_threshold, dis_lr, disc_type=disc_type, bc_iters=bc_iters)
+              traj_limitation, ret_threshold, dis_lr, disc_type=disc_type, bc_iters=bc_iters, discrete=discrete, grid_size=grid_size)
 
 
 if __name__ == "__main__":
