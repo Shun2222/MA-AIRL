@@ -432,6 +432,10 @@ class Runner(object):
         # batch of steps to batch of rollouts
         traj_obs = [[] for _ in range(self.num_agents)]
         traj_obs_next = [[] for _ in range(self.num_agents)]
+        print(np.array(mb_obs).shape)
+        print(f"mb obs0 {mb_obs[0]}")
+        print(f"mb obs0 {mb_obs[1]}")
+
         for k in range(self.num_agents):
             traj_obs[k] = np.asarray(mb_obs[k], dtype=np.float32).swapaxes(1, 0)
             traj_nobs = traj_obs[k].copy()
@@ -448,21 +452,17 @@ class Runner(object):
             mb_dones[k] = np.asarray(mb_dones[k], dtype=np.bool).swapaxes(1, 0)
             mb_masks[k] = mb_dones[k][:, :-1]
             mb_dones[k] = mb_dones[k][:, 1:]
-            rew = mb_true_rewards[k].reshape(1, mb_obs[k].shape[0])
             for t in range(len(traj_obs[k])):
                 if any(mb_true_rewards[k][t]>0): # if agent reached goal, they archive thier info
-                    arc_indi_obs[k] += (traj_obs_next[k][t]).tolist()
-                    arc_indi_actions[k] += multionehot(np.copy(act[k][t]), self.n_actions[k]).tolist()
-                    arc_indi_values[k] += (v[k][t]).tolist()
+                    arc_indi_obs[k] += (traj_obs[k][t]).tolist()
+                    arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
+                    arc_indi_values[k] += (mb_values[k][t]).tolist()
                     arc_indi_obs_next[k] += (traj_obs_next[k][t]).tolist()
-                    if all(rew[k]>-10):
+                    if any(mb_true_rewards[k][t]>0): # if agent reached goal, they archive thier info
                         arc_coop_obs[k] += (traj_obs_next[k][t]).tolist()
-                        arc_coop_actions[k] += multionehot(np.copy(act[k][t]), self.n_actions[k]).tolist()
-                        arc_coop_values[k] += (v[k][t]).tolist()
+                        arc_coop_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
+                        arc_coop_values[k] += (mb_values[k][t]).tolist()
                         arc_coop_obs_next[k] += (traj_obs_next[k][t]).tolist()
-
-
-                
 
 
         mb_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
@@ -592,7 +592,7 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
     for update in range(1, total_timesteps // nbatch + 1):
         obs, obs_next, states, rewards, report_rewards, masks, actions, values, all_obs, all_nobs,\
         mh_actions, mh_all_actions, mh_rewards, mh_true_rewards, mh_true_returns,\
-        arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs,
+        arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs,\
         arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs = runner.run()
 
         total_loss = np.zeros((num_agents, d_iters))
@@ -621,7 +621,9 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             archive_indi_num[k] += len(arc_indi_obs)
             if not arc_coop_obs[k]: continue
             mb_arc_coop_obs[k] += arc_coop_obs[k]
+            print(f"obs {k}: {arc_coop_obs[k]}")
             mb_arc_coop_actions[k] += arc_coop_actions[k]
+            print(f"acts {k}: {arc_coop_actions[k]}")
             mb_arc_coop_obs_next[k] += arc_coop_obs_next[k]
             mb_arc_coop_all_obs[k] += arc_coop_all_obs[k]
             mb_arc_coop_values[k] += arc_coop_values[k]
@@ -629,9 +631,13 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
         print(f'archive indi num: {archive_indi_num}')
         print(f'archive coop num: {archive_coop_num}')
         
+        archived = [False, False]
         if all(archive_indi_num>0): # only simple tag
-            archive_indi_buffer = Dset(np.array(mb_arc_indi_obs), np.array(mb_arc_indi_actions), np.array(mb_arc_indi_obs_next), np.array(mb_arc_indi_all_obs), np.array(mb_arc_indi_values), randomize=True, num_agents=num_agents-1, nobs_flag=True)
-            archive_coop_buffer = Dset(np.array(mb_arc_coop_obs), np.array(mb_arc_coop_actions), np.array(mb_arc_coop_obs_next), np.array(mb_arc_coop_all_obs), np.array(mb_arc_coop_values), randomize=True, num_agents=num_agents-1, nobs_flag=True)
+            archived[0] = True
+            archive_indi_buffer = Dset(np.array(mb_arc_indi_obs), np.array(mb_arc_indi_actions), np.array(mb_arc_indi_obs_next), np.array(mb_arc_indi_all_obs), np.array(mb_arc_indi_values), randomize=True, num_agents=num_agents, nobs_flag=True)
+        if all(archive_coop_num>0):
+            archived[1] = True
+            archive_coop_buffer = Dset(np.array(mb_arc_coop_obs), np.array(mb_arc_coop_actions), np.array(mb_arc_coop_obs_next), np.array(mb_arc_coop_all_obs), np.array(mb_arc_coop_values), randomize=True, num_agents=num_agents, nobs_flag=True)
 
         d_minibatch = nenvs * nsteps
         d_minibatch_quarter = int(d_minibatch/4)
@@ -639,41 +645,53 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
         d_minibatch = d_minibatch_half*2
 
         for d_iter in range(d_iters):
-            e_obs, e_actions, e_nobs, e_all_obs, _ = expert.get_next_batch(d_minibatch_half)
-            while(True):
-                e1_obs, e1_actions, e1_nobs, e1_all_obs, _ = archive_indi_buffer.get_next_batch(d_minibatch_alf)
-                e_obs = [np.concatenate([e_obs[k], e1_obs[k]]) for k in range(num_agents)]
-                e_actions = [np.concatenate([e_actions[k], e1_actions[k]]) for k in range(num_agents)]
-                e_nobs = [np.concatenate([e_nobs[k], e1_nobs[k]]) for k in range(num_agents)]
-                e_all_obs = [np.concatenate([e_all_obs[k], e1_all_obs[k]]) for k in range(num_agents)] 
-                batch_size = d_minibatch_half + d_minibatch_quarter
-                if len(e_obs[0])>=batch_size:
-                    e_obs = [e_obs[k][0:batch_size] for k in range(num_agents)]
-                    e_actions = [e_actions[k][0:_batch_size] for k in range(num_agents)]
-                    e_nobs = [e_nobs[k][0:batch_size] for k in range(num_agents)]
-                    e_all_obs = [e_all_obs[k][0:batch_size] for k in range(num_agents)]
-                    break
+            if all(archived):
+                expert_batch = [d_minibatch_half, d_minibatch_quarter, d_minibatch_quarter]
+            elif archived[0]:
+                expert_batch = [d_minibatch_half, d_minibatch_quarter, 0]
+            else:
+                expert_batch = [d_minibatch, 0, 0]
                 
-            while(True):
-                e1_obs, e1_actions, e1_nobs, e1_all_obs, _ = archive_coop_buffer.get_next_batch(d_minibatch_alf)
-                e_obs = [np.concatenate([e_obs[k], e1_obs[k]]) for k in range(num_agents)]
-                e_actions = [np.concatenate([e_actions[k], e1_actions[k]]) for k in range(num_agents)]
-                e_nobs = [np.concatenate([e_nobs[k], e1_nobs[k]]) for k in range(num_agents)]
-                e_all_obs = [np.concatenate([e_all_obs[k], e1_all_obs[k]]) for k in range(num_agents)] 
-                batch_size = d_minibatch
-                if len(e_obs[0])>=batch_size:
-                    e_obs = [e_obs[k][0:batch_size] for k in range(num_agents)]
-                    e_actions = [e_actions[k][0:_batch_size] for k in range(num_agents)]
-                    e_nobs = [e_nobs[k][0:batch_size] for k in range(num_agents)]
-                    e_all_obs = [e_all_obs[k][0:batch_size] for k in range(num_agents)]
-                    break
-                
+            e_obs, e_actions, e_nobs, e_all_obs, _ = expert.get_next_batch(expert_batch[0])
             g_obs, g_actions, g_nobs, g_all_obs, _ = buffer.get_next_batch(batch_size=d_minibatch)
+            print(expert_batch)
 
-            e_obs.append(e3_obs[3])
-            e_actions.append(e3_actions[3])
-            e_nobs.append(e3_nobs[3])
-            e_all_obs.append(e3_all_obs[3])
+            while(True):
+                if not archived[0]: break 
+                e1_obs, e1_actions, e1_nobs, e1_all_obs, _ = archive_indi_buffer.get_next_batch(expert_batch[1])
+                print(len(e_obs))
+                print(len(e1_obs))
+                print(len(e_obs[0]))
+                print(len(e1_obs[0]))
+                print(len(e_obs[0][0]))
+                print(len(e1_obs[0][0]))
+                e_obs = [np.concatenate([e_obs[k], e1_obs[k]]) for k in range(num_agents)]
+                e_actions = [np.concatenate([e_actions[k], e1_actions[k]]) for k in range(num_agents)]
+                e_nobs = [np.concatenate([e_nobs[k], e1_nobs[k]]) for k in range(num_agents)]
+                e_all_obs = [np.concatenate([e_all_obs[k], e1_all_obs[k]]) for k in range(num_agents)] 
+                batch_size = expert_batch[0] + expert_batch[1] 
+                if len(e_obs[0])>=batch_size:
+                    e_obs = [e_obs[k][0:batch_size] for k in range(num_agents)]
+                    e_actions = [e_actions[k][0:batch_size] for k in range(num_agents)]
+                    e_nobs = [e_nobs[k][0:batch_size] for k in range(num_agents)]
+                    e_all_obs = [e_all_obs[k][0:batch_size] for k in range(num_agents)]
+                    break
+                
+            while(True):
+                if not archived[1]: break
+                e1_obs, e1_actions, e1_nobs, e1_all_obs, _ = archive_coop_buffer.get_next_batch(expert_batch[2])
+                e_obs = [np.concatenate([e_obs[k], e1_obs[k]]) for k in range(num_agents)]
+                e_actions = [np.concatenate([e_actions[k], e1_actions[k]]) for k in range(num_agents)]
+                e_nobs = [np.concatenate([e_nobs[k], e1_nobs[k]]) for k in range(num_agents)]
+                e_all_obs = [np.concatenate([e_all_obs[k], e1_all_obs[k]]) for k in range(num_agents)] 
+                batch_size = expert_batch[0] + expert_batch[1] + expert_batch[2]
+                if len(e_obs[0])>=batch_size:
+                    e_obs = [e_obs[k][0:batch_size] for k in range(num_agents)]
+                    e_actions = [e_actions[k][0:batch_size] for k in range(num_agents)]
+                    e_nobs = [e_nobs[k][0:batch_size] for k in range(num_agents)]
+                    e_all_obs = [e_all_obs[k][0:batch_size] for k in range(num_agents)]
+                    break
+                
 
             e_a = [np.argmax(e_actions[k], axis=1) for k in range(len(e_actions))]
             g_a = [np.argmax(g_actions[k], axis=1) for k in range(len(g_actions))]
@@ -744,7 +762,8 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                     logger.record_tabular("policy_entropy %d" % k, float(policy_entropy[k]))
                     logger.record_tabular("policy_loss %d" % k, float(policy_loss[k]))
                     logger.record_tabular("value_loss %d" % k, float(value_loss[k]))
-                    logger.record_tabular("archive_num %d" %k, int(archive_num[k]))
+                    logger.record_tabular("archive_indi_num %d" %k, int(archive_indi_num[k]))
+                    logger.record_tabular("archive_coop_num %d" %k, int(archive_coop_num[k]))
                     try:
                         logger.record_tabular('pearson %d' % k, float(
                             pearsonr(report_rewards[k].flatten(), mh_true_returns[k].flatten())[0]))
