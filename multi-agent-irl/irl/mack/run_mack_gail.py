@@ -67,7 +67,7 @@ def main(logdir, env, expert_path, atlas, seed, traj_limitation, ret_threshold, 
     for env_id, seed, lr, batch_size in itertools.product(env_ids, seeds, lrs, batch_sizes):
         train(logdir + '/gail/' + env_id + '/' + disc_type + '/s-{}/l-{}-b-{}-d-{}-c-{}/seed-{}'.format(
               traj_limitation, lr, batch_size, dis_lr, bc_iters, seed),
-              env_id, 500*1000, lr, batch_size, seed, batch_size // 250, expert_path,
+              env_id, 500*100000, lr, batch_size, seed, batch_size // 250, expert_path,
               traj_limitation, ret_threshold, dis_lr, disc_type=disc_type, bc_iters=bc_iters, discrete=discrete, grid_size=grid_size)
 
 
