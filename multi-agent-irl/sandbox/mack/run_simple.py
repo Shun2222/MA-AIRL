@@ -43,6 +43,7 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
                                           'simple_crypto', 'simple_push',
                                           'simple_tag', 'simple_spread', 'simple_adversary',
                                            'simple_path_finding', 'simple_path_finding_single',
+                                           'simple_path_finding_jacii', 'simple_path_finding_single_jaciii',
                                            'simple_test']))
 @click.option('--lr', type=click.FLOAT, default=0.1)
 @click.option('--seed', type=click.INT, default=1)

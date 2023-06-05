@@ -15,7 +15,13 @@ from rl.common import set_global_seeds, explained_variance
 from irl.mack.kfac_discriminator_airl import Discriminator
 # from irl.mack.kfac_discriminator_wgan import Discriminator
 from irl.dataset import Dset
-
+# multi path2
+# agent 0 505.80061974707866 61.28522040380135
+# agent 1 505.80061974707866 61.28522040380135
+# single path2
+# agent 0 565.9397809775821 52.21372090092441
+# agent 1 565.9397809775821 52.21372090092441
+ARC_INDI_THRESHOLD = 505 
 
 class Model(object):
     def __init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
@@ -453,12 +459,12 @@ class Runner(object):
             mb_masks[k] = mb_dones[k][:, :-1]
             mb_dones[k] = mb_dones[k][:, 1:]
             for t in range(len(traj_obs[k])):
-                if any(mb_true_rewards[k][t]>0): # if agent reached goal, they archive thier info
+                if np.sum(np.array(mb_true_rewards[k][t]))>ARC_INDI_THRESHOLD): # if agent reached goal, they archive thier info
                     arc_indi_obs[k] += (traj_obs[k][t]).tolist()
                     arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
                     arc_indi_values[k] += (mb_values[k][t]).tolist()
                     arc_indi_obs_next[k] += (traj_obs_next[k][t]).tolist()
-                    if any(mb_true_rewards[k][t]>0): # if agent reached goal, they archive thier info
+                    if any(mb_true_rewards[k][t]<=-10): # if agent reached goal without collision, they archive info
                         arc_coop_obs[k] += (traj_obs_next[k][t]).tolist()
                         arc_coop_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
                         arc_coop_values[k] += (mb_values[k][t]).tolist()
