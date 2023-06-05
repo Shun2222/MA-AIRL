@@ -459,7 +459,7 @@ class Runner(object):
             mb_masks[k] = mb_dones[k][:, :-1]
             mb_dones[k] = mb_dones[k][:, 1:]
             for t in range(len(traj_obs[k])):
-                if np.sum(np.array(mb_true_rewards[k][t]))>ARC_INDI_THRESHOLD): # if agent reached goal, they archive thier info
+                if np.sum(np.array(mb_true_rewards[k][t]))>ARC_INDI_THRESHOLD: # if agent reached goal, they archive thier info
                     arc_indi_obs[k] += (traj_obs[k][t]).tolist()
                     arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
                     arc_indi_values[k] += (mb_values[k][t]).tolist()
