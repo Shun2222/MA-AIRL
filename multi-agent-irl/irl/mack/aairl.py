@@ -368,6 +368,11 @@ class Runner(object):
 
         for n in range(self.nsteps):
             actions, values, states = self.model.step(self.obs, self.actions)
+            for k in range(self.num_agents):
+                for i in range(self.nenv):
+                    rand = np.random.rand()
+                    if rand<0.1:
+                        actions[k][i] = np.random.randint(0, 5)
 
             self.actions = actions
             for k in range(self.num_agents):
@@ -446,7 +451,6 @@ class Runner(object):
         traj_obs = [[] for _ in range(self.num_agents)]
         traj_obs_next = [[] for _ in range(self.num_agents)]
 
-        true_rewards = mb_true_rewards.copy()
         for k in range(self.num_agents):
             traj_obs[k] = np.asarray(mb_obs[k], dtype=np.float32).swapaxes(1, 0)
             traj_nobs = traj_obs[k].copy()
