@@ -22,7 +22,11 @@ from irl.dataset import Dset
 # single path2
 # agent 0 565.9397809775821 52.21372090092441
 # agent 1 565.9397809775821 52.21372090092441
-ARC_INDI_THRESHOLD = 505 
+# multi path2 discrete 5 5 
+# agent 0 809.6167646583214 22.53541645214621
+# agent 1 809.6167646583214 22.53541645214621
+
+ARC_INDI_THRESHOLD = 750 
 
 class Model(object):
     def __init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
@@ -465,7 +469,6 @@ class Runner(object):
                     print("indi")
                     print(f"obs{k} {traj_obs[k][t]}")
                     print(f"act{k} {mb_actions[k][t]}")
-                    input()
                     arc_indi_obs[k] += (traj_obs[k][t]).tolist()
                     arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
                     arc_indi_values[k] += (mb_values[k][t]).tolist()
@@ -474,7 +477,6 @@ class Runner(object):
                         print("coop")
                         print(f"obs{k} {mb_obs[k][t]}")
                         print(f"act{k} {mb_actions[k][t]}")
-                        input()
                         arc_coop_obs[k] += (traj_obs_next[k][t]).tolist()
                         arc_coop_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
                         arc_coop_values[k] += (mb_values[k][t]).tolist()
