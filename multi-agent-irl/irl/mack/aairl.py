@@ -1,6 +1,7 @@
 import os.path as osp
 import random
 import time
+import pickle as pkl
 
 import joblib
 import numpy as np
@@ -424,6 +425,8 @@ class Runner(object):
             for k in range(self.num_agents):
                 mb_rewards[k].append(rewards[k])
                 mb_report_rewards[k].append(report_rewards[k])
+                # mb_rewards[k].append([rewards[k]])
+                # mb_report_rewards[k].append([report_rewards[k]])
            
 
             self.states = states
@@ -438,10 +441,8 @@ class Runner(object):
         # batch of steps to batch of rollouts
         traj_obs = [[] for _ in range(self.num_agents)]
         traj_obs_next = [[] for _ in range(self.num_agents)]
-        print(np.array(mb_obs).shape)
-        print(f"mb obs0 {mb_obs[0]}")
-        print(f"mb obs0 {mb_obs[1]}")
 
+        true_rewards = mb_true_rewards.copy()
         for k in range(self.num_agents):
             traj_obs[k] = np.asarray(mb_obs[k], dtype=np.float32).swapaxes(1, 0)
             traj_nobs = traj_obs[k].copy()
@@ -459,12 +460,21 @@ class Runner(object):
             mb_masks[k] = mb_dones[k][:, :-1]
             mb_dones[k] = mb_dones[k][:, 1:]
             for t in range(len(traj_obs[k])):
+                print(f"ep_rew{k}: {np.sum(np.array(mb_true_rewards[k][t]))}")
                 if np.sum(np.array(mb_true_rewards[k][t]))>ARC_INDI_THRESHOLD: # if agent reached goal, they archive thier info
+                    print("indi")
+                    print(f"obs{k} {traj_obs[k][t]}")
+                    print(f"act{k} {mb_actions[k][t]}")
+                    input()
                     arc_indi_obs[k] += (traj_obs[k][t]).tolist()
                     arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
                     arc_indi_values[k] += (mb_values[k][t]).tolist()
                     arc_indi_obs_next[k] += (traj_obs_next[k][t]).tolist()
-                    if any(mb_true_rewards[k][t]<=-10): # if agent reached goal without collision, they archive info
+                    if not any(mb_true_rewards[k][t]<=-10): # if agent reached goal without collision, they archive info
+                        print("coop")
+                        print(f"obs{k} {mb_obs[k][t]}")
+                        print(f"act{k} {mb_actions[k][t]}")
+                        input()
                         arc_coop_obs[k] += (traj_obs_next[k][t]).tolist()
                         arc_coop_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
                         arc_coop_values[k] += (mb_values[k][t]).tolist()
@@ -627,9 +637,7 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             archive_indi_num[k] += len(arc_indi_obs)
             if not arc_coop_obs[k]: continue
             mb_arc_coop_obs[k] += arc_coop_obs[k]
-            print(f"obs {k}: {arc_coop_obs[k]}")
             mb_arc_coop_actions[k] += arc_coop_actions[k]
-            print(f"acts {k}: {arc_coop_actions[k]}")
             mb_arc_coop_obs_next[k] += arc_coop_obs_next[k]
             mb_arc_coop_all_obs[k] += arc_coop_all_obs[k]
             mb_arc_coop_values[k] += arc_coop_values[k]
@@ -788,6 +796,12 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             savepath = osp.join(logger.get_dir(), 'm_%.5i' % update)
             print('Saving to', savepath)
             model.save(savepath)
+            pkl.dump(mb_arc_indi_obs, open('archive_indi_obs.pkl', 'wb'))
+            pkl.dump(mb_arc_indi_actions, open('archive_indi_actions.pkl', 'wb'))
+            pkl.dump(mb_arc_indi_obs_next, open('archive_indi_obs_next.pkl', 'wb'))
+            pkl.dump(mb_arc_coop_obs, open('archive_coop_obs.pkl', 'wb'))
+            pkl.dump(mb_arc_coop_actions, open('archive_coop_actions.pkl', 'wb'))
+            pkl.dump(mb_arc_coop_obs_next, open('archive_coop_obs_next.pkl', 'wb'))
             if disc_type == 'decentralized' or disc_type == 'decentralized-all':
                 for k in range(num_agents):
                     savepath = osp.join(logger.get_dir(), 'd_%d_%.5i' % (k, update))
@@ -796,4 +810,3 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                 assert False
     coord.request_stop()
     # coord.join(enqueue_threads)
-    env.close()
