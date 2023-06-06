@@ -1,5 +1,0 @@
-Logging to ./data/path2/airl/simple_path_finding_jaciii/decentralized/s-200/l-0.1-b-500-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-10
-Total trajectories: 200
-Total transitions: 10000
-Average episode length: 50.000000
-Average returns:[506.22295476 506.22295476]
