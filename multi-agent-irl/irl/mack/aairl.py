@@ -672,23 +672,29 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             else:
                 expert_batch = [d_minibatch, 0, 0]
                 
-            e_obs, e_actions, e_nobs, e_all_obs, _ = expert.get_next_batch(expert_batch[0])
+            if archived[1]:
+                expert_batch = [0, 0, d_minibatch]
+                
+            if expert_batch[0]!=0: 
+                e_obs, e_actions, e_nobs, e_all_obs, _ = expert.get_next_batch(expert_batch[0])
+            else:
+                e_obs = None
             g_obs, g_actions, g_nobs, g_all_obs, _ = buffer.get_next_batch(batch_size=d_minibatch)
             print(expert_batch)
 
             while(True):
-                if not archived[0]: break 
+                if not archived[0] or expert_batch[1]==0: break 
                 e1_obs, e1_actions, e1_nobs, e1_all_obs, _ = archive_indi_buffer.get_next_batch(expert_batch[1])
-                print(len(e_obs))
-                print(len(e1_obs))
-                print(len(e_obs[0]))
-                print(len(e1_obs[0]))
-                print(len(e_obs[0][0]))
-                print(len(e1_obs[0][0]))
-                e_obs = [np.concatenate([e_obs[k], e1_obs[k]]) for k in range(num_agents)]
-                e_actions = [np.concatenate([e_actions[k], e1_actions[k]]) for k in range(num_agents)]
-                e_nobs = [np.concatenate([e_nobs[k], e1_nobs[k]]) for k in range(num_agents)]
-                e_all_obs = [np.concatenate([e_all_obs[k], e1_all_obs[k]]) for k in range(num_agents)] 
+                if e_obs:
+                    e_obs = [np.concatenate([e_obs[k], e1_obs[k]]) for k in range(num_agents)]
+                    e_actions = [np.concatenate([e_actions[k], e1_actions[k]]) for k in range(num_agents)]
+                    e_nobs = [np.concatenate([e_nobs[k], e1_nobs[k]]) for k in range(num_agents)]
+                    e_all_obs = [np.concatenate([e_all_obs[k], e1_all_obs[k]]) for k in range(num_agents)] 
+                else:
+                    e_obs = e1_obs
+                    e_actions = e1_actions
+                    e_nobs = e1_nobs
+                    e_all_obs = e1_all_obs
                 batch_size = expert_batch[0] + expert_batch[1] 
                 if len(e_obs[0])>=batch_size:
                     e_obs = [e_obs[k][0:batch_size] for k in range(num_agents)]
@@ -698,12 +704,18 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                     break
                 
             while(True):
-                if not archived[1]: break
+                if not archived[1] or expert_batch[2]==0: break 
                 e1_obs, e1_actions, e1_nobs, e1_all_obs, _ = archive_coop_buffer.get_next_batch(expert_batch[2])
-                e_obs = [np.concatenate([e_obs[k], e1_obs[k]]) for k in range(num_agents)]
-                e_actions = [np.concatenate([e_actions[k], e1_actions[k]]) for k in range(num_agents)]
-                e_nobs = [np.concatenate([e_nobs[k], e1_nobs[k]]) for k in range(num_agents)]
-                e_all_obs = [np.concatenate([e_all_obs[k], e1_all_obs[k]]) for k in range(num_agents)] 
+                if e_obs:
+                    e_obs = [np.concatenate([e_obs[k], e1_obs[k]]) for k in range(num_agents)]
+                    e_actions = [np.concatenate([e_actions[k], e1_actions[k]]) for k in range(num_agents)]
+                    e_nobs = [np.concatenate([e_nobs[k], e1_nobs[k]]) for k in range(num_agents)]
+                    e_all_obs = [np.concatenate([e_all_obs[k], e1_all_obs[k]]) for k in range(num_agents)] 
+                else:
+                    e_obs = e1_obs
+                    e_actions = e1_actions
+                    e_nobs = e1_nobs
+                    e_all_obs = e1_all_obs
                 batch_size = expert_batch[0] + expert_batch[1] + expert_batch[2]
                 if len(e_obs[0])>=batch_size:
                     e_obs = [e_obs[k][0:batch_size] for k in range(num_agents)]
