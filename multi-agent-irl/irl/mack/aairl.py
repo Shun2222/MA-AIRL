@@ -373,7 +373,6 @@ class Runner(object):
                     rand = np.random.rand()
                     if rand<0.1:
                         actions[k][i] = np.random.randint(0, 5)
-
             self.actions = actions
             for k in range(self.num_agents):
                 mb_obs[k].append(np.copy(self.obs[k]))
@@ -668,7 +667,7 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             if all(archived):
                 expert_batch = [d_minibatch_half, d_minibatch_quarter, d_minibatch_quarter]
             elif archived[0]:
-                expert_batch = [d_minibatch_half, d_minibatch_quarter, 0]
+                expert_batch = [d_minibatch_half, d_minibatch_half, 0]
             else:
                 expert_batch = [d_minibatch, 0, 0]
                 
