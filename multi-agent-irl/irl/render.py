@@ -11,17 +11,20 @@ from sandbox.mack.policies import CategoricalPolicy
 from rl import bench
 import imageio
 import pickle as pkl
+from tqdm import tqdm
 
 
 @click.command()
 @click.option('--env', type=click.STRING)
 @click.option('--image', is_flag=True, flag_value=True)
 @click.option('--all', is_flag=True, flag_value=True)
+@click.option('--save_video', is_flag=True, flag_value=True)
 @click.option('--path', type=click.STRING, default="/atlas/u/lantaoyu/exps/mack/simple_path_finding_single/ENV6_3/l-0.1-b-1000/seed-1/checkpoint03000")
 @click.option('--discrete', is_flag=True)
 @click.option('--grid_size', nargs=2, type=int, default=(0, 0))
+@click.option('--num_trajs', type=int, default=1000)
 
-def render(env, image, all, path, discrete, grid_size):
+def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
     tf.reset_default_graph()
 
     env_id = env
@@ -61,11 +64,10 @@ def render(env, image, all, path, discrete, grid_size):
 
     images = []
     sample_trajs = []
-    num_trajs = 1000
     max_steps = 50
     avg_ret = [[] for _ in range(n_agents)]
 
-    for i in range(num_trajs):
+    for i in tqdm(range(num_trajs)):
         all_ob, all_agent_ob, all_ac, all_rew, ep_ret = [], [], [], [], [0 for k in range(n_agents)]
         for k in range(n_agents):
             all_ob.append([])
@@ -92,7 +94,7 @@ def render(env, image, all, path, discrete, grid_size):
             obs = [ob[None, :] for ob in obs]
             step += 1
 
-            if image:
+            if image or save_video:
                 if all:
                     img = env.render_all_steps(mode='rgb_array')
                 else:
@@ -120,16 +122,16 @@ def render(env, image, all, path, discrete, grid_size):
         for k in range(n_agents):
             avg_ret[k].append(ep_ret[k])
 
-    print(path)
     for k in range(n_agents):
         print('agent', k, np.mean(avg_ret[k]), np.std(avg_ret[k]))
 
     images = np.array(images)
     pkl.dump(sample_trajs, open(path + '-%dtra.pkl' % num_trajs, 'wb'))
-    if image:
+    if save_video:
         print(images.shape)
         imageio.mimsave(path + '.mp4', images, fps=25)
 
+    print(f"saved as {path}-{num_trajs}dtra.pkl")
 
 if __name__ == '__main__':
     render()
