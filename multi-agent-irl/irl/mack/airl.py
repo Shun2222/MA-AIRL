@@ -476,7 +476,7 @@ class Runner(object):
 
 def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.99, lam=0.95, log_interval=1, nprocs=32,
           nsteps=20, nstack=1, ent_coef=0.01, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
-          kfac_clip=0.001, save_interval=100, lrschedule='linear', dis_lr=0.001, disc_type='decentralized',
+          kfac_clip=0.001, save_interval=1000, lrschedule='linear', dis_lr=0.001, disc_type='decentralized',
           bc_iters=500, identical=None, l2=0.1, d_iters=1, rew_scale=0.1):
     tf.reset_default_graph()
     set_global_seeds(seed)
