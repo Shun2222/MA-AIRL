@@ -8,6 +8,7 @@ import tensorflow as tf
 from scipy.stats import pearsonr, spearmanr
 from rl.acktr.utils import Scheduler, find_trainable_variables, discount_with_dones
 from rl.acktr.utils import cat_entropy, mse, onehot, multionehot
+from tqdm import tqdm
 
 from rl import logger
 from rl.acktr import kfac
@@ -536,7 +537,7 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
 
     update_policy_until = 10
 
-    for update in range(1, total_timesteps // nbatch + 1):
+    for update in tqdm(range(1, total_timesteps // nbatch + 1)):
         obs, obs_next, states, rewards, report_rewards, masks, actions, values, all_obs, all_nobs,\
         mh_actions, mh_all_actions, mh_rewards, mh_true_rewards, mh_true_returns = runner.run()
 

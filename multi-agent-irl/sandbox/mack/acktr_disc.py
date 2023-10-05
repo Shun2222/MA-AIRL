@@ -38,7 +38,6 @@ class Model(object):
                 h = k
         pointer[h] = num_agents
 
-        print(pointer)
 
         A, ADV, R, PG_LR = [], [], [], []
         for k in range(num_agents):

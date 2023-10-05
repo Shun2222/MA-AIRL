@@ -92,6 +92,8 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
                 all_rew[k].append(rew[k])
                 ep_ret[k] += rew[k]
             obs = [ob[None, :] for ob in obs]
+            if (np.abs(obs)>1.0).any():
+                print('out of env')
             step += 1
 
             if image or save_video:

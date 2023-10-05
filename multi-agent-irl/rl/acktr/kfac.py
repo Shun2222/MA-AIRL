@@ -4,7 +4,7 @@ from functools import reduce
 from rl.acktr.kfac_utils import *
 
 KFAC_OPS = ['MatMul', 'Conv2D', 'BiasAdd']
-KFAC_DEBUG = True
+KFAC_DEBUG = False
 
 
 class KfacOptimizer():
@@ -79,9 +79,6 @@ class KfacOptimizer():
                     factors.append(searchFactors(g, graph))
                 op_names = [item['opName'] for item in factors]
                 # TO-DO: need to check all the attribute of the ops as well
-                print (gradient.name)
-                print (op_names)
-                print (len(np.unique(op_names)))
                 assert len(np.unique(op_names)) == 1, gradient.name + \
                     ' is shared among different computation OPs'
 
