@@ -28,7 +28,7 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
             return env
         return _thunk
 
-    logger.configure(logdir, format_strs=['stdout', 'log', 'json', 'tensorboard'])
+    logger.configure(logdir, format_strs=['log', 'json', 'tensorboard'])
 
     set_global_seeds(seed)
     env = SubprocVecEnv([create_env(i) for i in range(num_cpu)], is_multi_agent=True)
