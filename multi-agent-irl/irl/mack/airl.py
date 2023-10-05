@@ -193,7 +193,10 @@ class Model(object):
                     R[k]: np.concatenate([rewards[j] for j in range(k, pointer[k])], axis=0),
                     PG_LR[k]: cur_lr / float(scale[k])
                 })
-                sess.run(train_ops[k], feed_dict=new_map)
+                try:
+                    sess.run(train_ops[k], feed_dict=new_map)
+                except:
+                    print("Failed to update generator")
                 td_map.update(new_map)
 
                 if states[k] != []:

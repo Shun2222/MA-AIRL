@@ -477,17 +477,11 @@ class Runner(object):
                     print(f"ep_rew{k}: {ep_rew}")
 
                 if np.sum(np.array(mb_true_rewards[k][t]))>ARC_INDI_THRESHOLD: # if agent reached goal, they archive thier info
-                    print("indi")
-                    print(f"obs{k} {traj_obs[k][t]}")
-                    print(f"act{k} {mb_actions[k][t]}")
                     arc_indi_obs[k] += (traj_obs[k][t]).tolist()
                     arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
                     arc_indi_values[k] += (mb_values[k][t]).tolist()
                     arc_indi_obs_next[k] += (traj_obs_next[k][t]).tolist()
                     if not any(mb_true_rewards[k][t]<=-10): # if agent reached goal without collision, they archive info
-                        print("coop")
-                        print(f"obs{k} {mb_obs[k][t]}")
-                        print(f"act{k} {mb_actions[k][t]}")
                         arc_coop_obs[k] += (traj_obs_next[k][t]).tolist()
                         arc_coop_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
                         arc_coop_values[k] += (mb_values[k][t]).tolist()
@@ -644,32 +638,28 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                           nobs_flag=True)
         for k in range(num_agents):
             if not arc_indi_obs[k]: continue
-            mb_arc_indi_obs[k] = np.array(mb_arc_indi_obs[k].tolist() + arc_indi_obs[k])
-            mb_arc_indi_actions[k] = np.array(mb_arc_indi_actions[k].tolist() + arc_indi_actions[k])
-            mb_arc_indi_obs_next[k] = np.array(mb_arc_indi_obs_next[k].tolist() + arc_indi_obs_next[k])
-            mb_arc_indi_all_obs = np.array(mb_arc_indi_all_obs.tolist() + arc_indi_obs[k])
-            mb_arc_indi_values[k] = np.array(mb_arc_indi_values[k].tolist() + arc_indi_values[k])
+            mb_arc_indi_obs[k] = np.array(mb_arc_indi_obs[k].tolist() + arc_indi_obs[k])[-100:, :]
+            mb_arc_indi_actions[k] = np.array(mb_arc_indi_actions[k].tolist() + arc_indi_actions[k])[-100:, :]
+            mb_arc_indi_obs_next[k] = np.array(mb_arc_indi_obs_next[k].tolist() + arc_indi_obs_next[k])[-100:, :]
+            mb_arc_indi_all_obs = np.array(mb_arc_indi_all_obs.tolist() + arc_indi_obs[k])[-100:, :]
+            mb_arc_indi_values[k] = np.array(mb_arc_indi_values[k].tolist() + arc_indi_values[k])[-100:]
             archive_indi_num[k] = len(arc_indi_obs)
             if not arc_coop_obs[k]: continue
-            mb_arc_coop_obs[k] =  np.array(mb_arc_coop_obs[k].tolist() + arc_coop_obs[k])
-            mb_arc_coop_actions[k] = np.array(mb_arc_coop_actions[k].tolist() + arc_coop_actions[k])
-            mb_arc_coop_obs_next[k] = np.array(mb_arc_coop_obs_next[k].tolist() + arc_coop_obs_next[k])
-            mb_arc_coop_all_obs = np.array(mb_arc_coop_all_obs.tolist() + arc_coop_obs[k])
-            mb_arc_coop_values[k] = np.array(mb_arc_coop_values[k].tolist() + arc_coop_values[k])
+            mb_arc_coop_obs[k] =  np.array(mb_arc_coop_obs[k].tolist() + arc_coop_obs[k])[-100:, :]
+            mb_arc_coop_actions[k] = np.array(mb_arc_coop_actions[k].tolist() + arc_coop_actions[k])[-100:, :]
+            mb_arc_coop_obs_next[k] = np.array(mb_arc_coop_obs_next[k].tolist() + arc_coop_obs_next[k])[-100:, :]
+            mb_arc_coop_all_obs = np.array(mb_arc_coop_all_obs.tolist() + arc_coop_obs[k])[-100:, :]
+            mb_arc_coop_values[k] = np.array(mb_arc_coop_values[k].tolist() + arc_coop_values[k])[-100:]
             archive_coop_num[k] += len(arc_coop_obs)
-        print(f'archive indi num: {archive_indi_num}')
-        print(f'archive coop num: {archive_coop_num}')
         
         archived = [False, False]
         if all(archive_indi_num>0):
             archived[0] = True
-            if archive_indi_buffer == None:
-                archive_indi_buffer = Dset(mb_arc_indi_obs, mb_arc_indi_actions, mb_arc_indi_obs_next, mb_arc_indi_all_obs, mb_arc_indi_values, randomize=True, num_agents=num_agents, nobs_flag=True)
+            archive_indi_buffer = Dset(mb_arc_indi_obs, mb_arc_indi_actions, mb_arc_indi_obs_next, mb_arc_indi_all_obs, mb_arc_indi_values, randomize=True, num_agents=num_agents, nobs_flag=True)
 
         if all(archive_coop_num>0):
             archived[1] = True
-            if archive_coop_buffer == None:
-                archive_coop_buffer = Dset(mb_arc_coop_obs, mb_arc_coop_actions, mb_arc_coop_obs_next, mb_arc_coop_all_obs, mb_arc_coop_values, randomize=True, num_agents=num_agents, nobs_flag=True)
+            archive_coop_buffer = Dset(mb_arc_coop_obs, mb_arc_coop_actions, mb_arc_coop_obs_next, mb_arc_coop_all_obs, mb_arc_coop_values, randomize=True, num_agents=num_agents, nobs_flag=True)
 
         d_minibatch = nenvs * nsteps
         d_minibatch_quarter = int(d_minibatch/4)
