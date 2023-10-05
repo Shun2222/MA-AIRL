@@ -650,7 +650,7 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             #mb_arc_indi_all_obs = np.array(mb_arc_indi_all_obs.tolist() + arc_indi_obs[k])[-10000:, :]
             mb_arc_indi_values[k] = np.array(mb_arc_indi_values[k].tolist() + arc_indi_values[k])[-10000:]
             mb_arc_indi_infos[k] = (mb_arc_indi_infos[k] + arc_indi_infos[k])[-10000:]
-            archive_indi_num[k] = len(arc_indi_obs)
+            archive_indi_num[k] = len(arc_indi_obs[k])/nsteps
             if not arc_coop_obs[k]: continue
             mb_arc_coop_obs[k] =  np.array(mb_arc_coop_obs[k].tolist() + arc_coop_obs[k])[-10000:, :]
             mb_arc_coop_actions[k] = np.array(mb_arc_coop_actions[k].tolist() + arc_coop_actions[k])[-10000:, :]
@@ -658,7 +658,7 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             #mb_arc_coop_all_obs = np.array(mb_arc_coop_all_obs.tolist() + arc_coop_obs[k])[-10000:, :]
             mb_arc_coop_values[k] = np.array(mb_arc_coop_values[k].tolist() + arc_coop_values[k])[-10000:]
             mb_arc_coop_infos[k] = (mb_arc_coop_infos[k] + arc_coop_infos[k])[-10000:]
-            archive_coop_num[k] += len(arc_coop_obs)
+            archive_coop_num[k] += len(arc_coop_obs[k])/nsteps
         
         archived = [False, False]
         archived[0] = all(archive_indi_num>0)
@@ -680,7 +680,7 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             if archived[1]:
                 for k in range(num_agents):
                     target = mb_arc_coop_infos[k] 
-                    sorted_coopces = sorted(range(len(target)), key=lambda i: target)[-1000:]
+                    sorted_coopces = sorted(range(len(target)), key=lambda i: target)[-100:]
                     obs_sorted.append(np.array([mb_arc_coop_obs[k][i] for i in sorted_coopces]))
                     acs_sorted.append(np.array([mb_arc_coop_actions[k][i] for i in sorted_coopces]))
                     nobs_sorted.append(np.array([mb_arc_coop_obs_next[k][i] for i in sorted_coopces]))
