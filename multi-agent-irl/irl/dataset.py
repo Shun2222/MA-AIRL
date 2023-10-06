@@ -5,13 +5,15 @@ from tqdm import tqdm
 
 
 class Dset(object):
-    def __init__(self, inputs, labels, nobs, all_obs, rews, randomize, num_agents, nobs_flag=False):
+    def __init__(self, inputs, labels, nobs, all_obs, rews, randomize, num_agents, nobs_flag=False, all_obs_flag=True):
         self.inputs = inputs.copy()
         self.labels = labels.copy()
         self.nobs_flag = nobs_flag
         if nobs_flag:
             self.nobs = nobs.copy()
-        self.all_obs = all_obs.copy()
+        self.all_obs_flag = all_obs_flag
+        if all_obs_flag:
+            self.all_obs = all_obs.copy()
         self.rews = rews.copy()
         self.num_agents = num_agents
         assert len(self.inputs[0]) == len(self.labels[0])
@@ -30,23 +32,25 @@ class Dset(object):
                 if self.nobs_flag:
                     self.nobs[k] = self.nobs[k][idx, :]
                 self.rews[k] = self.rews[k][idx]
-            self.all_obs = self.all_obs[idx, :]
+            if self.all_obs_flag:
+                self.all_obs = self.all_obs[idx, :]
 
     def get_next_batch(self, batch_size):
         # if batch_size is negative -> return all
         if batch_size < 0:
-            return self.inputs, self.labels, self.all_obs, self.rews
+            return self.inputs, self.labels, self.rews
         if self.pointer + batch_size >= self.num_pairs:
             self.init_pointer()
         end = self.pointer + batch_size
-        inputs, labels, rews, nobs = [], [], [], []
+        inputs, labels, rews, nobs, all_obs = [], [], [], [], []
         for k in range(self.num_agents):
             inputs.append(self.inputs[k][self.pointer:end, :])
             labels.append(self.labels[k][self.pointer:end, :])
             rews.append(self.rews[k][self.pointer:end])
             if self.nobs_flag:
                 nobs.append(self.nobs[k][self.pointer:end, :])
-        all_obs = self.all_obs[self.pointer:end, :]
+        if self.all_obs_flag:
+            all_obs = self.all_obs[self.pointer:end, :]
         self.pointer = end
         if self.nobs_flag:
             return inputs, labels, nobs, all_obs, rews
@@ -64,7 +68,8 @@ class Dset(object):
             if self.nobs_flag:
                 self.nobs[k] = self.nobs[k][idx[:l], :]
             self.rews[k] = self.rews[k][idx[:l]]
-        self.all_obs = self.all_obs[idx[:l], :]
+        if self.all_obs_flag:
+            self.all_obs = self.all_obs[idx[:l], :]
         # update
         for k in range(self.num_agents):
             self.inputs[k] = np.concatenate([self.inputs[k], inputs[k]], axis=0)
@@ -72,7 +77,8 @@ class Dset(object):
             if self.nobs_flag:
                 self.nobs[k] = np.concatenate([self.nobs[k], nobs[k]], axis=0)
             self.rews[k] = np.concatenate([self.rews[k], rews[k]], axis=0)
-        self.all_obs = np.concatenate([self.all_obs, all_obs], axis=0)
+        if self.all_obs_flag:
+            self.all_obs = np.concatenate([self.all_obs, all_obs], axis=0)
         self.num_pairs = len(inputs[0])
         self.init_pointer()
 
