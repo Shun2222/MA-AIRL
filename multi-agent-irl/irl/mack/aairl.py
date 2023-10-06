@@ -325,6 +325,7 @@ class Runner(object):
         self.states = model.initial_state
         self.n_actions = [env.action_space[k].n for k in range(self.num_agents)]
         self.dones = [np.array([False for _ in range(nenv)]) for k in range(self.num_agents)]
+        self.archiveThres = np.ones(5)*15
 
     def update_obs(self, obs):
         # TODO: Potentially useful for stacking.
@@ -642,32 +643,33 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
         else:
             buffer = Dset(mh_obs, mh_actions, mh_obs_next, all_obs, mh_values, randomize=True, num_agents=num_agents,
                           nobs_flag=True)
-        for k in range(num_agents):
-            if not arc_indi_obs[k]: continue
-            mb_arc_indi_obs[k] = np.array(mb_arc_indi_obs[k].tolist() + arc_indi_obs[k])[-10000:, :]
-            mb_arc_indi_actions[k] = np.array(mb_arc_indi_actions[k].tolist() + arc_indi_actions[k])[-10000:, :]
-            mb_arc_indi_obs_next[k] = np.array(mb_arc_indi_obs_next[k].tolist() + arc_indi_obs_next[k])[-10000:, :]
-            #mb_arc_indi_all_obs = np.array(mb_arc_indi_all_obs.tolist() + arc_indi_obs[k])[-10000:, :]
-            mb_arc_indi_values[k] = np.array(mb_arc_indi_values[k].tolist() + arc_indi_values[k])[-10000:]
-            mb_arc_indi_infos[k] = (mb_arc_indi_infos[k] + arc_indi_infos[k])[-10000:]
-            archive_indi_num[k] = len(arc_indi_obs[k])/nsteps
-            if not arc_coop_obs[k]: continue
-            mb_arc_coop_obs[k] =  np.array(mb_arc_coop_obs[k].tolist() + arc_coop_obs[k])[-10000:, :]
-            mb_arc_coop_actions[k] = np.array(mb_arc_coop_actions[k].tolist() + arc_coop_actions[k])[-10000:, :]
-            mb_arc_coop_obs_next[k] = np.array(mb_arc_coop_obs_next[k].tolist() + arc_coop_obs_next[k])[-10000:, :]
-            #mb_arc_coop_all_obs = np.array(mb_arc_coop_all_obs.tolist() + arc_coop_obs[k])[-10000:, :]
-            mb_arc_coop_values[k] = np.array(mb_arc_coop_values[k].tolist() + arc_coop_values[k])[-10000:]
-            mb_arc_coop_infos[k] = (mb_arc_coop_infos[k] + arc_coop_infos[k])[-10000:]
-            archive_coop_num[k] += len(arc_coop_obs[k])/nsteps
-        
-        archived = [False, False]
-        archived[0] = all(archive_indi_num>0)
-        archived[1] = all(archive_coop_num>0)
 
         d_minibatch = nenvs * nsteps
         d_minibatch_quarter = int(d_minibatch/4)
         d_minibatch_half = d_minibatch_quarter*2 
         d_minibatch = d_minibatch_half*2
+
+        for k in range(num_agents):
+            if not arc_indi_obs[k]: continue
+            mb_arc_indi_obs[k] = np.array(mb_arc_indi_obs[k].tolist() + arc_indi_obs[k])[-d_minibatch:, :]
+            mb_arc_indi_actions[k] = np.array(mb_arc_indi_actions[k].tolist() + arc_indi_actions[k])[-d_minibatch:, :]
+            mb_arc_indi_obs_next[k] = np.array(mb_arc_indi_obs_next[k].tolist() + arc_indi_obs_next[k])[-d_minibatch:, :]
+            #mb_arc_indi_all_obs = np.array(mb_arc_indi_all_obs.tolist() + arc_indi_obs[k])[-d_minibatch:, :]
+            mb_arc_indi_values[k] = np.array(mb_arc_indi_values[k].tolist() + arc_indi_values[k])[-d_minibatch:]
+            mb_arc_indi_infos[k] = (mb_arc_indi_infos[k] + arc_indi_infos[k])[-d_minibatch:]
+            archive_indi_num[k] += len(arc_indi_obs[k])/nsteps
+            if not arc_coop_obs[k]: continue
+            mb_arc_coop_obs[k] =  np.array(mb_arc_coop_obs[k].tolist() + arc_coop_obs[k])[-d_minibatch:, :]
+            mb_arc_coop_actions[k] = np.array(mb_arc_coop_actions[k].tolist() + arc_coop_actions[k])[-d_minibatch:, :]
+            mb_arc_coop_obs_next[k] = np.array(mb_arc_coop_obs_next[k].tolist() + arc_coop_obs_next[k])[-d_minibatch:, :]
+            #mb_arc_coop_all_obs = np.array(mb_arc_coop_all_obs.tolist() + arc_coop_obs[k])[-d_minibatch0:, :]
+            mb_arc_coop_values[k] = np.array(mb_arc_coop_values[k].tolist() + arc_coop_values[k])[-d_minibatch:]
+            mb_arc_coop_infos[k] = (mb_arc_coop_infos[k] + arc_coop_infos[k])[-d_minibatch:]
+            archive_coop_num[k] += len(arc_coop_obs[k])/nsteps
+        
+        archived = [False, False]
+        archived[0] = all(archive_indi_num>0)
+        archived[1] = all(archive_coop_num>0)
 
         if archived[0] or archived[1]:
             obs_sorted = []
@@ -678,39 +680,38 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
 
         for d_iter in range(d_iters):
             if archived[1]:
-                for k in range(num_agents):
-                    target = mb_arc_coop_infos[k] 
-                    sorted_coopces = sorted(range(len(target)), key=lambda i: target)[-100:]
-                    obs_sorted.append(np.array([mb_arc_coop_obs[k][i] for i in sorted_coopces]))
-                    acs_sorted.append(np.array([mb_arc_coop_actions[k][i] for i in sorted_coopces]))
-                    nobs_sorted.append(np.array([mb_arc_coop_obs_next[k][i] for i in sorted_coopces]))
-                    values_sorted.append(np.array([mb_arc_coop_values[k][i] for i in sorted_coopces]))
+                # for k in range(num_agents):
+                    # target = mb_arc_coop_infos[k] 
+                    # sorted_coopces = sorted(range(len(target)), key=lambda i: target)[-100:]
+                    # obs_sorted.append(np.array([mb_arc_coop_obs[k][i] for i in sorted_coopces]))
+                    # acs_sorted.append(np.array([mb_arc_coop_actions[k][i] for i in sorted_coopces]))
+                    # nobs_sorted.append(np.array([mb_arc_coop_obs_next[k][i] for i in sorted_coopces]))
+                    # values_sorted.append(np.array([mb_arc_coop_values[k][i] for i in sorted_coopces]))
                 #all_obs_sorted = np.array([mb_arc_coop_all_obs[1][i*nsteps:(i+1)*nsteps] for i in sorted_coopces])
                 if archive_coop_buffer==None:
-                    archive_coop_buffer = Dset(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
+                    #archive_coop_buffer = Dset(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
+                    archive_coop_buffer = Dset(mb_arc_coop_obs, mb_arc_coop_actions, mb_arc_coop_obs_next, [], mb_arc_coop_values, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
                 else:
-                    archive_coop_buffer.update(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted)
+                    #archive_coop_buffer.update(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted)
+                    archive_coop_buffer = Dset(mb_arc_coop_obs, mb_arc_coop_actions, mb_arc_coop_obs_next, [], mb_arc_coop_values)
                 expert_batch = [0, 0, d_minibatch]
             elif archived[0]:
-                for k in range(num_agents):
-                    #print(f"obs {np.array(mb_arc_indi_obs).shape}")
-                    #print(f"acs {np.array(mb_arc_indi_actions).shape}")
-                    #print(f"nobs {np.array(mb_arc_indi_obs_next).shape}")
-                    #print(f"allobs {np.array(mb_arc_indi_all_obs).shape}")
-                    #print(f"values {np.array(mb_arc_indi_values).shape}")
-                    eval_indi = copy.deepcopy(mb_arc_indi_infos[k])
-                    eval_indi = [eval_indi[i][0] - eval_indi[i][1]*10 for i in range(len(eval_indi))]
-                    target = mb_arc_indi_infos[k] 
-                    sorted_indices = sorted(range(len(target)), key=lambda i: target)[-100:]
-                    obs_sorted.append(np.array([mb_arc_indi_obs[k][i] for i in sorted_indices]))
-                    acs_sorted.append(np.array([mb_arc_indi_actions[k][i] for i in sorted_indices]))
-                    nobs_sorted.append(np.array([mb_arc_indi_obs_next[k][i] for i in sorted_indices]))
-                    values_sorted.append(np.array([mb_arc_indi_values[k][i] for i in sorted_indices]))
-                #all_obs_sorted = np.array([mb_arc_indi_all_obs[i*nsteps:(i+1)*nsteps] for i in sorted_indices]).reshape(nsteps*len(sorted_indices), 2)
+                # for k in range(num_agents):
+                    # eval_indi = copy.deepcopy(mb_arc_indi_infos[k])
+                    # eval_indi = [eval_indi[i][0] - eval_indi[i][1]*10 for i in range(len(eval_indi))]
+                    # target = mb_arc_indi_infos[k] 
+                    # sorted_indices = sorted(range(len(target)), key=lambda i: target)[-100:]
+                    # obs_sorted.append(np.array([mb_arc_indi_obs[k][i] for i in sorted_indices]))
+                    # acs_sorted.append(np.array([mb_arc_indi_actions[k][i] for i in sorted_indices]))
+                    # nobs_sorted.append(np.array([mb_arc_indi_obs_next[k][i] for i in sorted_indices]))
+                    # values_sorted.append(np.array([mb_arc_indi_values[k][i] for i in sorted_indices]))
+                #all_obs_sorted = np.array([mb_arc_indi_all_obs[1][i*nsteps:(i+1)*nsteps] for i in sorted_indices])
                 if archive_indi_buffer==None:
-                    archive_indi_buffer = Dset(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
+                    #archive_indi_buffer = Dset(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
+                    archive_indi_buffer = Dset(mb_arc_indi_obs, mb_arc_indi_actions, mb_arc_indi_obs_next, [], mb_arc_indi_values, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
                 else:
-                    archive_indi_buffer.update(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted)
+                    #archive_indi_buffer.update(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted)
+                    archive_indi_buffer = Dset(mb_arc_indi_obs, mb_arc_indi_actions, mb_arc_indi_obs_next, [], mb_arc_indi_values)
                 expert_batch = [d_minibatch_half, d_minibatch_half, 0]
             else:
                 expert_batch = [d_minibatch, 0, 0]
