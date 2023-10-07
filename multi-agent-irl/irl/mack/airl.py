@@ -368,7 +368,7 @@ class Runner(object):
             re_actions = self.actions
             re_obs_next = obs
             re_path_prob = self.model.get_log_action_prob_step(re_obs, re_actions)  # [num_agent, nenv, 1]
-            re_actions_onehot = [multionehot(re_actions[k], self.n_actions[k]) for k in range(self.num_agents)]
+            re_actions_onehot = [multionehot(re_actions[k], self.n_attions[k]) for k in range(self.num_agents)]
 
             # get reward from discriminator
             if self.disc_type == 'decentralized':

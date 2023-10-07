@@ -132,3 +132,18 @@ irl/mack/airl.py
 
     182: train generator ŠJŽn (irl/mack/airl.py)
        148: optimize func for policy(generator) 
+       # I don't know what do 188 line process.
+       188~: new_map.update({
+                    train_model[k].X: np.concatenate([obs[j] for j in range(k, pointer[k])], axis=0),
+                    train_model[k].X_v: np.concatenate([ob.copy() for j in range(k, pointer[k])], axis=0),
+                    A[k]: np.concatenate([actions[j] for j in range(k, pointer[k])], axis=0),
+                    ???ADV[k]: np.concatenate([advs[j] for j in range(k, pointer[k])], axis=0),
+                    ???R[k]: np.concatenate([rewards[j] for j in range(k, pointer[k])], axis=0),
+                    ???PG_LR[k]: cur_lr / float(scale[k])
+                })
+                sess.run(train_ops[k], feed_dict=new_map)
+                td_map.update(new_map)
+                policy_loss, value_loss, policy_entropy = sess.run(
+                    [pg_loss, vf_loss, entropy],
+                    td_map
+                )
