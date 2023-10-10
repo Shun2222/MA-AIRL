@@ -28,7 +28,7 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
             return env
         return _thunk
 
-    logger.configure(logdir, format_strs=['stdout', 'log', 'json', 'tensorboard'])
+    logger.configure(logdir, format_strs=['log', 'json', 'tensorboard'])
 
     set_global_seeds(seed)
     env = SubprocVecEnv([create_env(i) for i in range(num_cpu)], is_multi_agent=True)
@@ -65,7 +65,7 @@ def main(logdir, env, expert_path, atlas, seed, traj_limitation, ret_threshold, 
     for env_id, seed, lr, batch_size in itertools.product(env_ids, seeds, lrs, batch_sizes):
         train(logdir + '/gail/' + env_id + '/' + disc_type + '/s-{}/l-{}-b-{}-d-{}-c-{}/seed-{}'.format(
               traj_limitation, lr, batch_size, dis_lr, bc_iters, seed),
-              env_id, 90000*100, lr, batch_size, seed, 2, expert_path,
+              env_id, 90000*100, lr, batch_size, seed, 20, expert_path,
               traj_limitation, ret_threshold, dis_lr, disc_type=disc_type, bc_iters=bc_iters, discrete=discrete, grid_size=grid_size)
 
 

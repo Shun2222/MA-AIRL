@@ -20,7 +20,7 @@ from irl.mack.kfac_discriminator_airl import Discriminator
 from irl.dataset import Dset
 
 class Model(object):
-    def __init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
+    def _init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
                  nstack=1, ent_coef=0.00, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
                  kfac_clip=0.001, lrschedule='linear', identical=None):
         config = tf.ConfigProto(allow_soft_placement=True,
@@ -436,12 +436,11 @@ class Runner(object):
                     mb_is_goal[k].append([info[i]['n'][k]['isGoal'] for i in range(len(info))])
                     mb_is_collision[k].append([info[i]['n'][k]['isCollision'] for i in range(len(info))])
                 else:
-                    mb_is_goal[k].append([False, False])
-                    mb_is_collision[k].append([False, False])
+                    mb_is_goal[k].append([[False, False] for _ in range(self.nenv)])
+                    mb_is_collision[k].append([[False, False] for _ in range(self.nenv)])
                 # mb_rewards[k].append([rewards[k]])
                 # mb_report_rewards[k].append([report_rewards[k]])
            
-
             self.states = states
             self.dones = dones
             self.update_obs(obs)
@@ -471,8 +470,8 @@ class Runner(object):
             mb_dones[k] = np.asarray(mb_dones[k], dtype=np.bool).swapaxes(1, 0)
             mb_masks[k] = mb_dones[k][:, :-1]
             mb_dones[k] = mb_dones[k][:, 1:]
-            mb_is_goal[k] = np.asarray(mb_is_goal[k], dtype=np.float32).swapaxes(1, 0)
-            mb_is_collision[k] = np.asarray(mb_is_collision[k], dtype=np.float32).swapaxes(1, 0)
+            mb_is_goal[k] = np.asarray(mb_is_goal[k], dtype=np.bool).swapaxes(1, 0)
+            mb_is_collision[k] = np.asarray(mb_is_collision[k], dtype=np.bool).swapaxes(1, 0)
 
             for t in range(len(traj_obs[k])):
                 ep_rew = np.sum(np.array(mb_true_rewards[k][t]))
