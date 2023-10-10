@@ -20,7 +20,7 @@ from irl.mack.kfac_discriminator_airl import Discriminator
 from irl.dataset import Dset
 
 class Model(object):
-    def _init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
+    def __init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
                  nstack=1, ent_coef=0.00, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
                  kfac_clip=0.001, lrschedule='linear', identical=None):
         config = tf.ConfigProto(allow_soft_placement=True,
@@ -530,12 +530,14 @@ class Runner(object):
             return mb_obs, mb_obs_next, mb_states, mb_returns, mb_report_returns, mb_masks, mb_actions, \
                    mb_values, mb_all_obs, mb_all_nobs, mh_actions, mh_all_actions, mb_rewards, mb_true_rewards, mb_true_returns, \
                    arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs, arc_indi_infos,\
-                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, arc_coop_infos
+                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, arc_coop_infos,\
+                   mb_is_goal, mb_is_collision
         else:
             return mb_obs, mb_states, mb_returns, mb_report_returns, mb_masks, mb_actions,\
                    mb_values, mb_all_obs, mh_actions, mh_all_actions, mb_rewards, mb_true_rewards, mb_true_returns,\
                    arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs, arc_indi_infos,\
-                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, arc_coop_infos
+                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, arc_coop_infos,\
+                   mb_is_goal, mb_is_collision
 
 
 def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.99, lam=0.95, log_interval=1, nprocs=32,
@@ -624,7 +626,8 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
         obs, obs_next, states, rewards, report_rewards, masks, actions, values, all_obs, all_nobs,\
         mh_actions, mh_all_actions, mh_rewards, mh_true_rewards, mh_true_returns,\
         arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs, arc_indi_infos,\
-        arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, arc_coop_infos = runner.run()
+        arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, arc_coop_infos,\
+        mh_is_goal, mh_is_collision = runner.run()
 
         total_loss = np.zeros((num_agents, d_iters))
 
@@ -687,14 +690,13 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                     # nobs_sorted.append(np.array([mb_arc_coop_obs_next[k][i] for i in sorted_coopces]))
                     # values_sorted.append(np.array([mb_arc_coop_values[k][i] for i in sorted_coopces]))
                 #all_obs_sorted = np.array([mb_arc_coop_all_obs[1][i*nsteps:(i+1)*nsteps] for i in sorted_coopces])
-                if archive_coop_buffer==None:
-                    #archive_coop_buffer = Dset(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
-                    archive_coop_buffer = Dset(mb_arc_coop_obs, mb_arc_coop_actions, mb_arc_coop_obs_next, [], mb_arc_coop_values, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
-                else:
-                    #archive_coop_buffer.update(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted)
-                    archive_coop_buffer = Dset(mb_arc_coop_obs, mb_arc_coop_actions, mb_arc_coop_obs_next, [], mb_arc_coop_values)
+                #archive_coop_buffer = archive_coop_buffer.update(mb_arc_coop_obs, mb_arc_coop_actions, mb_arc_coop_obs_next, [], mb_arc_coop_values)
+                archive_coop_buffer = Dset(mb_arc_coop_obs, mb_arc_coop_actions, mb_arc_coop_obs_next, [], mb_arc_coop_values, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
                 expert_batch = [0, 0, d_minibatch]
             elif archived[0]:
+                archive_indi_buffer = Dset(mb_arc_indi_obs, mb_arc_indi_actions, mb_arc_indi_obs_next, [], mb_arc_indi_values, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
+                expert_batch = [d_minibatch_half, d_minibatch_half, 0]
+                assert archive_indi_buffer!=None
                 # for k in range(num_agents):
                     # eval_indi = copy.deepcopy(mb_arc_indi_infos[k])
                     # eval_indi = [eval_indi[i][0] - eval_indi[i][1]*10 for i in range(len(eval_indi))]
@@ -705,13 +707,8 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                     # nobs_sorted.append(np.array([mb_arc_indi_obs_next[k][i] for i in sorted_indices]))
                     # values_sorted.append(np.array([mb_arc_indi_values[k][i] for i in sorted_indices]))
                 #all_obs_sorted = np.array([mb_arc_indi_all_obs[1][i*nsteps:(i+1)*nsteps] for i in sorted_indices])
-                if archive_indi_buffer==None:
                     #archive_indi_buffer = Dset(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
-                    archive_indi_buffer = Dset(mb_arc_indi_obs, mb_arc_indi_actions, mb_arc_indi_obs_next, [], mb_arc_indi_values, randomize=True, num_agents=num_agents, nobs_flag=True, all_obs_flag=False)
-                else:
                     #archive_indi_buffer.update(obs_sorted, acs_sorted, nobs_sorted, all_obs_sorted, values_sorted)
-                    archive_indi_buffer = Dset(mb_arc_indi_obs, mb_arc_indi_actions, mb_arc_indi_obs_next, [], mb_arc_indi_values)
-                expert_batch = [d_minibatch_half, d_minibatch_half, 0]
             else:
                 expert_batch = [d_minibatch, 0, 0]
                 
@@ -844,6 +841,8 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                         logger.record_tabular('spearman %d' % k, float(
                             spearmanr(report_rewards[k].flatten(), mh_true_returns[k].flatten())[0]))
                         logger.record_tabular('reward %d' % k, float(np.mean(rewards[k])))
+                        logger.record_tabular('goal %d' % k, float(np.mean(mh_is_goal[k])))
+                        logger.record_tabular('collision %d' % k, float(np.mean(mh_is_collision[k])))
                     except:
                         pass
                     logger.record_tabular('true reward %d' % k, float(np.mean(mh_true_returns[k])))
