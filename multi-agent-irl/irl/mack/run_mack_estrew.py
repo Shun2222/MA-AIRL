@@ -11,13 +11,13 @@ from rl import logger
 from rl.common import set_global_seeds
 from rl.common.vec_env.subproc_vec_env import SubprocVecEnv
 from irl.dataset import MADataSet
-from irl.mack.airl import learn
+from irl.mack.estrew import learn
 from sandbox.mack.policies import CategoricalPolicy
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu, expert_path, traj_limitation, ret_threshold, dis_lr, disc_type='decentralized', bc_iters=500, l2=0.1, d_iters=1,
-          rew_scale=0.1, discrete=False, grid_size=None):
+          rew_scale=0.1, discrete=False, grid_size=None, discpath=None):
     def create_env(rank):
         def _thunk():
             env = make_env.make_env(env_id, discrete_env=discrete, grid_size=grid_size)
@@ -34,11 +34,11 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
     env = SubprocVecEnv([create_env(i) for i in range(num_cpu)], is_multi_agent=True)
     print(num_cpu)
     policy_fn = CategoricalPolicy
-    expert = MADataSet(expert_path, ret_threshold=ret_threshold, traj_limitation=traj_limitation, nobs_flag=True)
+    expert = None
     learn(policy_fn, expert, env, env_id, seed, total_timesteps=int(num_timesteps * 1.1), nprocs=num_cpu,
           nsteps=timesteps_per_batch // num_cpu, lr=lr, ent_coef=0.0, dis_lr=dis_lr,
           disc_type=disc_type, bc_iters=bc_iters, identical=make_env.get_identical(env_id), l2=l2, d_iters=d_iters,
-          rew_scale=rew_scale)
+          rew_scale=rew_scale, discpath=discpath)
     env.close()
 
 
@@ -59,18 +59,19 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
 @click.option('--rew_scale', type=click.FLOAT, default=0)
 @click.option('--discrete', is_flag=True)
 @click.option('--grid_size', nargs=2, type=int, default=(0, 0))
+@click.option('--discpath', type=click.STRING, default='data/icaart5/aairl/simple_path_finding_jaciii/decentralized/s-200/l-0.1-b-500-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-30/')
 def main(logdir, env, expert_path, seed, traj_limitation, ret_threshold, dis_lr, disc_type, bc_iters, l2, d_iters,
-         rew_scale, discrete, grid_size):
+         rew_scale, discrete, grid_size, discpath):
     env_ids = [env]
     lrs = [0.1]
     seeds = [seed]
-    batch_sizes = [100]
+    batch_sizes = [500]
 
     for env_id, seed, lr, batch_size in itertools.product(env_ids, seeds, lrs, batch_sizes):
-        train(logdir + '/airl/' + env_id + '/' + disc_type + '/s-{}/l-{}-b-{}-d-{}-c-{}-l2-{}-iter-{}-r-{}/seed-{}'.format(
+        train(logdir + '/aairl/' + env_id + '/' + disc_type + '/s-{}/l-{}-b-{}-d-{}-c-{}-l2-{}-iter-{}-r-{}/seed-{}'.format(
               traj_limitation, lr, batch_size, dis_lr, bc_iters, l2, d_iters, rew_scale, seed),
-              env_id, 90000*100, lr, batch_size, seed, 2, expert_path,
-              traj_limitation, ret_threshold, dis_lr, disc_type=disc_type, bc_iters=bc_iters, l2=l2, d_iters=d_iters, rew_scale=rew_scale, discrete=discrete, grid_size=grid_size)
+              env_id, 10000*500, lr, batch_size, seed, 30, expert_path,
+              traj_limitation, ret_threshold, dis_lr, disc_type=disc_type, bc_iters=bc_iters, l2=l2, d_iters=d_iters, rew_scale=rew_scale, discrete=discrete, grid_size=grid_size, discpath=discpath)
 
 
 if __name__ == "__main__":

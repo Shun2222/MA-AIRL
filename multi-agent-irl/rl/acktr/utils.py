@@ -4,6 +4,9 @@ import tensorflow as tf
 import rl.common.tf_util as U
 from collections import deque
 
+def sample_best(logits, axis=1):
+    return tf.argmax(logits, axis=axis)
+
 def sample(logits, axis=1):
     noise = tf.random_uniform(tf.shape(logits))
     return tf.argmax(logits - tf.log(-tf.log(noise)), axis=axis)

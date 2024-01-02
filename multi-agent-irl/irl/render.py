@@ -7,11 +7,12 @@ import make_env
 import numpy as np
 from rl.common.misc_util import set_global_seeds
 from sandbox.mack.acktr_disc import Model, onehot
-from sandbox.mack.policies import CategoricalPolicy
+from sandbox.mack.policies import CategoricalPolicy_actBest, CategoricalPolicy
 from rl import bench
 import imageio
 import pickle as pkl
 from tqdm import tqdm
+from gym import spaces
 
 
 @click.command()
@@ -32,9 +33,9 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
     def create_env():
         env = make_env.make_env(env_id, discrete_env=discrete, grid_size=grid_size)
         #env = make_env.make_env(env_id)
-        env.seed(10)
+        env.seed(20)
         # env = bench.Monitor(env, '/tmp/',  allow_early_resets=True)
-        set_global_seeds(10)
+        set_global_seeds(20)
         return env
 
     env = create_env()
@@ -46,6 +47,7 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
     n_agents = len(env.action_space)
     ob_space = env.observation_space
     ac_space = env.action_space
+    #ac_space = [spaces.Discrete(4) for _ in range(2)]
 
     print('observation space')
     print(ob_space)
@@ -55,7 +57,7 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
     n_actions = [action.n for action in ac_space]
 
     make_model = lambda: Model(
-        CategoricalPolicy, ob_space, ac_space, 1, total_timesteps=1e7, nprocs=2, nsteps=500,
+        CategoricalPolicy_actBest, ob_space, ac_space, 1, total_timesteps=1e7, nprocs=2, nsteps=500,
         nstack=1, ent_coef=0.01, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.01, max_grad_norm=0.5, kfac_clip=0.001,
         lrschedule='linear', identical=make_env.get_identical(env_id), use_kfac=False)
     model = make_model()
@@ -79,7 +81,9 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
         step = 0
         done = False
         while not done:
-            action, _, _ = model.step(obs, action)
+            obs = [np.array(np.round(obs[0], 2)), np.array(np.round(obs[1], 2))]
+            action, _, pi = model.step(obs, action)
+            print(f'obs:{obs}, act:{action}, pi:{pi}')
             actions_list = [onehot(action[k][0], n_actions[k]) for k in range(n_agents)]
             # actions_list = [onehot(np.random.randint(n_actions[k]), n_actions[k]) for k in range(n_agents)]
 

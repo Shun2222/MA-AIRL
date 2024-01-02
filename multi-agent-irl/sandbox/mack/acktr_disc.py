@@ -9,6 +9,7 @@ from rl.acktr.utils import cat_entropy, mse, onehot, multionehot
 from rl import logger
 from rl.acktr import kfac
 from rl.common import set_global_seeds, explained_variance
+from gym import spaces
 
 
 class Model(object):
@@ -293,7 +294,7 @@ class Model(object):
 
 
 class Runner(object):
-    def __init__(self, env, model, nsteps, nstack, gamma, lam):
+    def __init__(self, env, model, ac_space, nsteps, nstack, gamma, lam):
         self.env = env
         self.model = model
         self.num_agents = len(env.observation_space)
@@ -312,7 +313,7 @@ class Runner(object):
         self.lam = lam
         self.nsteps = nsteps
         self.states = model.initial_state
-        self.n_actions = [env.action_space[k].n for k in range(self.num_agents)]
+        self.n_actions = [ac_space[k].n for k in range(self.num_agents)]
         self.dones = [np.array([False for _ in range(nenv)]) for k in range(self.num_agents)]
 
     def update_obs(self, obs):
@@ -420,7 +421,11 @@ def learn(policy, env, seed, total_timesteps=int(40e6), gamma=0.95, lam=0.92, lo
 
     nenvs = env.num_envs
     ob_space = env.observation_space
-    ac_space = env.action_space
+    #ac_space = env.action_space
+    ac_space = [spaces.Discrete(4) for _ in range(2)]
+    x = input(f'行動空間を強制的に４に変更します。これは，5番目の行動（Stop）をしないようにするためです。yを入力すると学習を開始します。:')
+    assert x=='y'
+
     make_model = lambda: Model(policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=nprocs, nsteps
                                 =nsteps, nstack=nstack, ent_coef=ent_coef, vf_coef=vf_coef, vf_fisher_coef=
                                 vf_fisher_coef, lr=lr, max_grad_norm=max_grad_norm, kfac_clip=kfac_clip,
@@ -431,7 +436,7 @@ def learn(policy, env, seed, total_timesteps=int(40e6), gamma=0.95, lam=0.92, lo
             fh.write(cloudpickle.dumps(make_model))
     model = make_model()
 
-    runner = Runner(env, model, nsteps=nsteps, nstack=nstack, gamma=gamma, lam=lam)
+    runner = Runner(env, model, ac_space, nsteps=nsteps, nstack=nstack, gamma=gamma, lam=lam)
     nbatch = nenvs*nsteps
     tstart = time.time()
     coord = tf.train.Coordinator()

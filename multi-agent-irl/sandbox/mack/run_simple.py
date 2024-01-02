@@ -49,7 +49,7 @@ def train(logdir, env_id, num_timesteps, lr, timesteps_per_batch, seed, num_cpu,
 @click.option('--seed', type=click.INT, default=1)
 @click.option('--batch_size', type=click.INT, default=1000)
 @click.option('--atlas', is_flag=True, flag_value=True)
-@click.option('--iteration', type=click.INT, default=1000)#5e7
+@click.option('--iteration', type=click.INT, default=10000)#5e7
 @click.option('--discrete', is_flag=True)
 @click.option('--grid_size', nargs=2, type=int, default=(0, 0))
 
