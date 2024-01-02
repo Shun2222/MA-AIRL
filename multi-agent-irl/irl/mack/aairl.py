@@ -368,11 +368,6 @@ class Runner(object):
 
         for n in range(self.nsteps):
             actions, values, states = self.model.step(self.obs, self.actions)
-            for k in range(self.num_agents):
-                for i in range(self.nenv):
-                    rand = np.random.rand()
-                    if rand<0.1:
-                        actions[k][i] = np.random.randint(0, 5)
             self.actions = actions
             for k in range(self.num_agents):
                 mb_obs[k].append(np.copy(self.obs[k]))
@@ -480,29 +475,33 @@ class Runner(object):
         for k in range(self.num_agents):
             for t in range(len(traj_obs[k])):
                 mb_is_collision[k][t][-1] = False # 最後がTrueになっちゃうので強制的に変更
-                ep_rew = np.sum(np.array(mb_true_rewards[k][t]))
+                tf = ~mb_dones[k][t]
+                ep_rew = np.sum(np.array(mb_true_rewards[k][t][tf]))
+                print(f'rew {mb_true_rewards[k][t]}')
+                print(f'rew2 {mb_true_rewards[k][t][tf]}')
+                input()
                 goal = np.sum(np.array(mb_is_goal[k][t]))
                 col = np.sum(np.array(mb_is_collision[k][t]))
                 if ep_rew==np.nan:
                     print("ep_rew is nan!!!!")
                 else:
                     print(f"ep_rew{k}: {ep_rew}, goal:{goal}, col{col}")
-                if np.sum(np.array(mb_true_rewards[0][t]))>ARC_INDI_THRESHOLD and np.sum(np.array(mb_true_rewards[1][t]))>ARC_INDI_THRESHOLD: # if agent reached goal, they archive thier info
+                if np.sum(~mb_dones[0][t]) < GOAL_STEP_THRESHOLD and np.sum(~mb_dones[1][t]) < GOAL_STEP_THRESHOLD: # if agent reached goal, they archive thier info
 
-                    traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs[k][t]] 
+                    traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs[k][t][tf]] 
                     arc_indi_obs[k] += traj_obs_round
-                    arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
+                    arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t][tf]), self.n_actions[k]).tolist()
 
-                    arc_indi_values[k] += (mb_values[k][t]).tolist()
-                    traj_obs_next_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs_next[k][t]] 
+                    arc_indi_values[k] += (mb_values[k][t][tf]).tolist()
+                    traj_obs_next_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs_next[k][t][tf]] 
                     arc_indi_obs_next[k] += traj_obs_next_round
-                    col = np.sum(np.array(mb_is_collision[k][t]))
+                    col = np.sum(np.array(mb_is_collision[k][t][tf]))
                     #if not any(mb_true_rewards[k][t]<=-100): # if agent reached goal without collision, they archive info
                     if col==0: # if agent reached goal without collision, they archive info
                         #arc_coop_obs[k] += (traj_obs[k][t]).tolist()
                         arc_coop_obs[k] += traj_obs_round
-                        arc_coop_actions[k] += multionehot(np.copy(mb_actions[k][t]), self.n_actions[k]).tolist()
-                        arc_coop_values[k] += (mb_values[k][t]).tolist()
+                        arc_coop_actions[k] += multionehot(np.copy(mb_actions[k][t][tf]), self.n_actions[k]).tolist()
+                        arc_coop_values[k] += (mb_values[k][t][tf]).tolist()
                         arc_coop_obs_next[k] += traj_obs_next_round
 
 

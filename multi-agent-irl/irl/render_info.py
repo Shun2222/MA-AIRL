@@ -38,11 +38,6 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
         return env
 
     env = create_env()
-    #path = "/atlas/u/lantaoyu/exps//airl/simple_path_finding_single/decentralized/s-200/l-0.1-b-1000-d-0.1-c-500-l2-0.1-iter-1-r-0.0/seed-1/m_01500" #2input single irl
-    #path = r"/atlas/u/lantaoyu/exps/mack/simple_path_finding_single/l-0.1-b-1000/seed-1\checkpoint02400"
-    #path = r"./data/checkpoint01500"
-    #path = r"data/tag-dist-rew/checkpoint01100"
-    #path = r"data/tag-dist-rew/airl/m_15000"
     n_agents = len(env.action_space)
     ob_space = env.observation_space
     ac_space = env.action_space
@@ -69,6 +64,7 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
 
     for i in tqdm(range(num_trajs)):
         all_ob, all_agent_ob, all_ac, all_rew, ep_ret = [], [], [], [], [0 for k in range(n_agents)]
+        mb_dones = [[] for _ in range(n_agents)]
         for k in range(n_agents):
             all_ob.append([])
             all_ac.append([])
@@ -90,7 +86,15 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
                 all_ac[k].append(actions_list[k])
             all_agent_ob.append(np.concatenate(obs, axis=1))
             obs, rew, done, info = env.step(actions_list)
-            print(info)
+            not_all_done = False 
+            for k in range(n_agents):
+                if not done[k]:
+                    not_all_done = True
+            if not not_all_done:
+                print(info)
+                print(f'all done true {done}')
+                break
+
             for k in range(n_agents):
                 all_rew[k].append(rew[k])
                 ep_ret[k] += rew[k]
@@ -119,6 +123,7 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
 
         all_agent_ob = np.squeeze(all_agent_ob)
         print(f"goal:{sum_goal}, col:{sum_col}")
+        print(f'len {len(all_ob[0])}')
         traj_data = {
             "ob": all_ob, "ac": all_ac, "rew": all_rew,
             "ep_ret": ep_ret, "all_ob": all_agent_ob
