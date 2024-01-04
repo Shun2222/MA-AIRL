@@ -16,8 +16,10 @@ from rl.acktr import kfac
 from rl.common import set_global_seeds, explained_variance
 from irl.mack.kfac_discriminator_airl import Discriminator
 from irl.dataset import Dset
+from gym import spaces
 
 ARC_INDI_THRESHOLD = 250
+GOAL_STEP_THRESHOLD = 15 
 
 class Model(object):
     def __init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
@@ -323,7 +325,9 @@ class Runner(object):
         self.lam = lam
         self.nsteps = nsteps
         self.states = model.initial_state
-        self.n_actions = [env.action_space[k].n for k in range(self.num_agents)]
+        #ac_space = env.action_space
+        ac_space = [spaces.Discrete(4) for _ in range(2)]
+        self.n_actions = [ac_space[k].n for k in range(self.num_agents)]
         self.dones = [np.array([False for _ in range(nenv)]) for k in range(self.num_agents)]
 
     def update_obs(self, obs):
@@ -363,20 +367,38 @@ class Runner(object):
         arc_coop_values = [[] for _ in range(self.num_agents)]
 
         obs = self.env.reset()
+        self.dones = [np.array([False for _ in range(self.nenv)]) for k in range(self.num_agents)]
         self.update_obs(obs)
         self.actions = [np.zeros((self.nenv, )) for _ in range(self.num_agents)]
 
+        traj_index = 0
         for n in range(self.nsteps):
             actions, values, states = self.model.step(self.obs, self.actions)
             self.actions = actions
+
+            not_all_done = False 
+            for k in range(self.num_agents):
+                if not self.dones[0][k]:
+                    not_all_done = True
+            if not not_all_done:
+                # 初期化されると観測値に0.0が帰ってくるのでここで捨てる
+                traj_index += 1
+                obs = self.env.reset()
+                self.update_obs(obs)
+                #self.info = [{} for _ in range(self.nenv)]
+
             for k in range(self.num_agents):
                 mb_obs[k].append(np.copy(self.obs[k]))
                 mb_actions[k].append(actions[k])
                 mb_values[k].append(values[k])
                 mb_dones[k].append(self.dones[k])
+
+
+
             actions_list = []
             for i in range(self.nenv):
                 actions_list.append([onehot(actions[k][i], self.n_actions[k]) for k in range(self.num_agents)])
+
             obs, true_rewards, dones, info = self.env.step(actions_list)
 
             is_round = True
@@ -433,20 +455,39 @@ class Runner(object):
                 mb_report_rewards[k].append(report_rewards[k])
                 # mb_rewards[k].append([rewards[k]])
                 # mb_report_rewards[k].append([report_rewards[k]])
-                if 'n' in info[0].keys():
+
+                """
+                tf = np.array(['n' in info[i].keys() for i in range(len(info))])
+                if tf.all():
                     mb_is_goal[k].append([info[i]['n'][k]['isGoal'] for i in range(len(info))])
                     mb_is_collision[k].append([info[i]['n'][k]['isCollision'] for i in range(len(info))])
                 else:
                     mb_is_goal[k].append([[False, False] for _ in range(self.nenv)])
-                    mb_is_collision[k].append([[False, False] for _ in range(self.nenv)])
+                    mb_is_collision[k].append([[False, False] for _ in range(self.nenv)])"""
            
 
             self.states = states
             self.dones = dones
             self.update_obs(obs)
+            self.info = info
 
             for k in range(self.num_agents):
                 mb_true_rewards[k].append(true_rewards[k])
+
+                is_goal = []
+                is_collision = []
+                for l in range(len(self.info)):
+                    if self.dones[0][l] and self.dones[1][l]:
+                        is_goal.append(True)
+                        is_collision.append(False)
+                    elif not 'n' in self.info[l].keys():
+                        is_goal.append(False)
+                        is_collision.append(False)
+                    else:
+                        is_goal.append(self.info[l]['n'][k]['isGoal'])
+                        is_collision.append(self.info[l]['n'][k]['isCollision'])
+                mb_is_goal[k].append(is_goal)
+                mb_is_collision[k].append(is_collision)
         for k in range(self.num_agents):
             mb_dones[k].append(self.dones[k])
 
@@ -472,39 +513,73 @@ class Runner(object):
             mb_dones[k] = mb_dones[k][:, 1:]
             mb_is_goal[k] = np.asarray(mb_is_goal[k], dtype=np.bool).swapaxes(1, 0)
             mb_is_collision[k] = np.asarray(mb_is_collision[k], dtype=np.bool).swapaxes(1, 0)
+        #print(mb_obs[0])
+        #print(traj_obs[0][0])
+        #print(mb_is_goal[0][0])
         for k in range(self.num_agents):
-            for t in range(len(traj_obs[k])):
-                mb_is_collision[k][t][-1] = False # 最後がTrueになっちゃうので強制的に変更
-                tf = ~mb_dones[k][t]
-                ep_rew = np.sum(np.array(mb_true_rewards[k][t][tf]))
-                print(f'rew {mb_true_rewards[k][t]}')
-                print(f'rew2 {mb_true_rewards[k][t][tf]}')
-                input()
-                goal = np.sum(np.array(mb_is_goal[k][t]))
-                col = np.sum(np.array(mb_is_collision[k][t]))
-                if ep_rew==np.nan:
-                    print("ep_rew is nan!!!!")
-                else:
-                    print(f"ep_rew{k}: {ep_rew}, goal:{goal}, col{col}")
-                if np.sum(~mb_dones[0][t]) < GOAL_STEP_THRESHOLD and np.sum(~mb_dones[1][t]) < GOAL_STEP_THRESHOLD: # if agent reached goal, they archive thier info
+            ep_rews = []
+            cols = []
+            goals = []
+            steps = []
+            for t in range(len(traj_obs)):
+                traj_len = [np.where(mb_dones[k2][t])[0] for k2 in range(self.num_agents)]
+                traj_len = [traj_len[k2] - np.concatenate([[-1], traj_len[k2][:-1]]) for k2 in range(self.num_agents)]
+                sprev = 0
+                for idx, s in enumerate(np.where(mb_dones[k][t])[0]):
+                    traj_tf = np.array([False for _ in range(len(mb_dones[k][t]))])
+                    traj_tf[sprev:s+1] = True
+                    """print(f't:{t}, tf:{traj_tf}')
+                    print(f'tf shape: {traj_tf.shape}')
+                    print(mb_is_collision[k])
+                    print(f'col shape: {mb_is_collision[k].shape}')
+                    print(f'dones shape: {mb_dones[k].shape}')
+                    print(f'true_rewards shape: {mb_true_rewards[k].shape}')
+                    print(f'is_goal shape: {mb_is_goal[k].shape}')
+                    print(f'traj_obs shape: {traj_obs[k].shape}')
+                    print(mb_dones[k])"""
+                    mb_is_collision[k][t][traj_tf][-1] = False # 最後がTrueになっちゃうので強制的に変更
+                    #traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs[k][t][tf]] 
+                    #print(traj_obs_round)
+                    print(f't, k, sliceNum, length(length2): {t}, {k}, {s}, {np.sum(traj_tf)}({traj_len[k][idx]})')
+                    ep_rew = np.sum(np.array(mb_true_rewards[k][t][traj_tf]))
+                    goal = np.sum(np.array(mb_is_goal[k][t][traj_tf]))
+                    col = np.sum(np.array(mb_is_collision[k][t][traj_tf]))
+                    if ep_rew==np.nan:
+                        print("ep_rew is nan!!!!")
+                    else:
+                        print(f"ep_rew{k}: {ep_rew}, goal:{goal}, col{col}")
+                        ep_rews.append(ep_rew)
+                        cols.append(col)
+                        goals.append(goal)
+                        steps.append(traj_len[k][idx])
+                    if idx>=len(traj_len[0]) or idx>=len(traj_len[1]):
+                        continue
 
-                    traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs[k][t][tf]] 
-                    arc_indi_obs[k] += traj_obs_round
-                    arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t][tf]), self.n_actions[k]).tolist()
+                    if traj_len[0][idx] < GOAL_STEP_THRESHOLD and traj_len[1][idx] < GOAL_STEP_THRESHOLD: # if agent reached goal, they archive thier info
 
-                    arc_indi_values[k] += (mb_values[k][t][tf]).tolist()
-                    traj_obs_next_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs_next[k][t][tf]] 
-                    arc_indi_obs_next[k] += traj_obs_next_round
-                    col = np.sum(np.array(mb_is_collision[k][t][tf]))
-                    #if not any(mb_true_rewards[k][t]<=-100): # if agent reached goal without collision, they archive info
-                    if col==0: # if agent reached goal without collision, they archive info
-                        #arc_coop_obs[k] += (traj_obs[k][t]).tolist()
-                        arc_coop_obs[k] += traj_obs_round
-                        arc_coop_actions[k] += multionehot(np.copy(mb_actions[k][t][tf]), self.n_actions[k]).tolist()
-                        arc_coop_values[k] += (mb_values[k][t][tf]).tolist()
-                        arc_coop_obs_next[k] += traj_obs_next_round
+                        traj = traj_obs[k][t][traj_tf]
+                        traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj] 
+                        arc_indi_obs[k] += traj_obs_round
+                        arc_indi_actions[k] += multionehot(np.copy(mb_actions[k][t][traj_tf]), self.n_actions[k]).tolist()
+
+                        arc_indi_values[k] += (mb_values[k][t][traj_tf]).tolist()
+                        traj_obs_next_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs_next[k][t][traj_tf]] 
+                        arc_indi_obs_next[k] += traj_obs_next_round
+                        col = np.sum(np.array(mb_is_collision[k][t][traj_tf]))
+                        #if not any(mb_true_rewards[k][t]<=-100): # if agent reached goal without collision, they archive info
+                        if col==0: # if agent reached goal without collision, they archive info
+                            #arc_coop_obs[k] += (traj_obs[k][t]).tolist()
+                            arc_coop_obs[k] += traj_obs_round
+                            arc_coop_actions[k] += multionehot(np.copy(mb_actions[k][t][traj_tf]), self.n_actions[k]).tolist()
+                            arc_coop_values[k] += (mb_values[k][t][traj_tf]).tolist()
+                            arc_coop_obs_next[k] += traj_obs_next_round
+                    sprev = s+1
 
 
+            logger.record_tabular('true reward %d' % k, float(np.mean(ep_rews)))
+            logger.record_tabular('collision %d' % k, float(np.mean(cols)))
+            logger.record_tabular('goal %d' % k, float(np.mean(goals)))
+            logger.record_tabular('steps %d' % k, float(np.mean(steps)))
         mb_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
         mb_report_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
         mb_true_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
@@ -563,8 +638,9 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
 
     nenvs = env.num_envs
     ob_space = env.observation_space
-    ac_space = env.action_space
-    print(ac_space)
+    #ac_space = env.action_space
+    print(f'行動空間を強制的に４に変更します。これは，5番目の行動（Stop）をしないようにするためです。:')
+    ac_space = [spaces.Discrete(4) for _ in range(2)]
     num_agents = (len(ob_space))
     make_model = lambda: Model(policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=nprocs, nsteps=nsteps,
                                nstack=nstack, ent_coef=ent_coef, vf_coef=vf_coef, vf_fisher_coef=vf_fisher_coef,
@@ -835,8 +911,6 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                     logger.record_tabular("value_loss %d" % k, float(value_loss[k]))
                     logger.record_tabular("archive_indi_num %d" %k, int(archive_indi_num[k]))
                     logger.record_tabular("archive_coop_num %d" %k, int(archive_coop_num[k]))
-                    logger.record_tabular('goal %d' % k, float(np.sum(np.array(mh_is_goal[k]))/(nenvs * len(mh_is_goal[k][0])/50)))
-                    logger.record_tabular('collision %d' % k, float(np.sum(np.array(mh_is_collision[k]))/(nenvs * len(mh_is_collision[k][0])/50)))
                     try:
                         logger.record_tabular('pearson %d' % k, float(
                             pearsonr(report_rewards[k].flatten(), mh_true_returns[k].flatten())[0]))
@@ -845,9 +919,9 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                         logger.record_tabular('reward %d' % k, float(np.mean(rewards[k])))
                     except:
                         pass
-                    logger.record_tabular('true reward %d' % k, float(np.mean(mh_true_returns[k])))
-                    ep_rew = np.mean(np.sum(np.array(mh_true_rewards[k][:]), axis=1))
-                    logger.record_tabular('Exp. Ret %d' % k, float(np.sum(mh_true_rewards[k])/(nenvs * len(mh_true_rewards[k][0])/50)))
+                    #logger.record_tabular('true reward %d' % k, float(np.mean(mh_true_returns[k])))
+                    #ep_rew = np.mean(np.sum(np.array(mh_true_rewards[k][:]), axis=1))
+                    #logger.record_tabular('Exp. Ret %d' % k, float(np.sum(mh_true_rewards[k])/(nenvs * len(mh_true_rewards[k][0])/50)))
 
             total_loss_m = np.mean(total_loss, axis=1)
             for k in range(num_agents):

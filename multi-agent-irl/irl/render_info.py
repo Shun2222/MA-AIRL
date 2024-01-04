@@ -12,6 +12,7 @@ from rl import bench
 import imageio
 import pickle as pkl
 from tqdm import tqdm
+from gym import spaces
 
 
 @click.command()
@@ -40,7 +41,10 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
     env = create_env()
     n_agents = len(env.action_space)
     ob_space = env.observation_space
-    ac_space = env.action_space
+    x = input(f'行動空間を強制的に４に変更します。これは，5番目の行動（Stop）をしないようにするためです。yを入力する実行とします。:')
+    ac_space = [spaces.Discrete(4) for _ in range(2)]
+    if x!='y':
+        ac_space = env.action_space
 
     print('observation space')
     print(ob_space)
@@ -86,14 +90,6 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
                 all_ac[k].append(actions_list[k])
             all_agent_ob.append(np.concatenate(obs, axis=1))
             obs, rew, done, info = env.step(actions_list)
-            not_all_done = False 
-            for k in range(n_agents):
-                if not done[k]:
-                    not_all_done = True
-            if not not_all_done:
-                print(info)
-                print(f'all done true {done}')
-                break
 
             for k in range(n_agents):
                 all_rew[k].append(rew[k])
@@ -103,6 +99,15 @@ def render(env, image, all, save_video, path, discrete, grid_size, num_trajs):
             obs = [ob[None, :] for ob in obs]
             if (np.abs(obs)>1.0).any():
                 print('out of env')
+
+            not_all_done = False 
+            for k in range(n_agents):
+                if not done[k]:
+                    not_all_done = True
+            if not not_all_done:
+                print(info)
+                print(f'all done true {done}')
+                break
             step += 1
 
             if image or save_video:
