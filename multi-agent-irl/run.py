@@ -1,6 +1,6 @@
 import os 
 
-for i in range(60, 90):
+for i in range(120, 150):
     os.system(rf"python3 -m irl.mack.run_mack_aairl \
                  --env simple_path_finding_jaciii \
                  --seed {i} \
