@@ -657,7 +657,7 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
     for _ in range(bc_iters):
         e_obs, e_actions, e_nobs, _, _ = expert.get_next_batch(nenvs * nsteps)
         e_a = [np.argmax(e_actions[k], axis=1) for k in range(len(e_actions))]
-        lld_loss = model.clone(e_obs, e_a)
+        #lld_loss = model.clone(e_obs, e_a)
 
 
     mb_arc_indi_obs = [np.array([]) for _ in range(num_agents)]
