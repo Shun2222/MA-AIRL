@@ -18,6 +18,8 @@ class Dset(object):
         self.num_agents = num_agents
         assert len(self.inputs[0]) == len(self.labels[0])
         self.randomize = randomize
+        #print(f'inputs {inputs}')
+        #print(f'len inputs0 {len(inputs[0])}')
         self.num_pairs = len(inputs[0])
         self.init_pointer()
 
@@ -27,6 +29,8 @@ class Dset(object):
             idx = np.arange(self.num_pairs)
             np.random.shuffle(idx)
             for k in range(self.num_agents):
+                #print(f'num pairs {self.num_pairs}')
+                #print(f'idx: {idx}')
                 self.inputs[k] = self.inputs[k][idx, :]
                 self.labels[k] = self.labels[k][idx, :]
                 if self.nobs_flag:
