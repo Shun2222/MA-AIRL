@@ -791,6 +791,13 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                 obs_next_flat[k] = np.array(obs_next_flat[k])    
                 values_flat[k] = np.array(values_flat[k])    
 
+            min_len = np.min([len(obs_flat[k]) for k in range(num_agents)])
+            for k in range(num_agents):
+                obs_flat[k] = obs_flat[k][0:min_len]
+                actions_flat[k] = actions_flat[k][0:min_len]
+                obs_next_flat[k] = obs_next_flat[k][0:min_len]
+                values_flat[k] = values_flat[k][0:min_len]
+
             archive_indi_buffer = Dset(obs_flat, actions_flat, obs_next_flat, [], values_flat, randomize=True, num_agents=num_agents, nobs_flag=True)
 
 
@@ -812,6 +819,14 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                 actions_flat[k] = np.array(actions_flat[k])    
                 obs_next_flat[k] = np.array(obs_next_flat[k])    
                 values_flat[k] = np.array(values_flat[k])    
+
+            min_len = np.min([len(obs_flat[k]) for k in range(num_agents)])
+            for k in range(num_agents):
+                obs_flat[k] = obs_flat[k][0:min_len]
+                actions_flat[k] = actions_flat[k][0:min_len]
+                obs_next_flat[k] = obs_next_flat[k][0:min_len]
+                values_flat[k] = values_flat[k][0:min_len]
+
 
             archive_coop_buffer = Dset(obs_flat, actions_flat, obs_next_flat, [], values_flat, randomize=True, num_agents=num_agents, nobs_flag=True)
 
