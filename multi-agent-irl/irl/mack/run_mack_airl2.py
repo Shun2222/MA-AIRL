@@ -11,7 +11,7 @@ from rl import logger
 from rl.common import set_global_seeds
 from rl.common.vec_env.subproc_vec_env import SubprocVecEnv
 from irl.dataset import MADataSet
-from irl.mack.airl import learn
+from irl.mack.airl2 import learn
 from sandbox.mack.policies import CategoricalPolicy
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 

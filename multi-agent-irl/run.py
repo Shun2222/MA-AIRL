@@ -1,7 +1,7 @@
 import os 
 
 for i in range(200, 201):
-    os.system(rf"python3 -m irl.mack.run_mack_aairl \
+    os.system(rf"python3 -m irl.mack.run_mack_airl2 \
                  --env simple_path_finding_jaciii \
                  --seed {i} \
                  --expert_path data/goal-done-test/checkpoint01100-1000tra.pkl\
