@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 
 class Dset(object):
-    def __init__(self, inputs, labels, nobs, all_obs, rews, randomize, num_agents, nobs_flag=False, all_obs_flag=True):
+    def __init__(self, inputs, labels, nobs, all_obs, rews, randomize, num_agents, nobs_flag=False, all_obs_flag=False):
         self.inputs = inputs.copy()
         self.labels = labels.copy()
         self.nobs_flag = nobs_flag
