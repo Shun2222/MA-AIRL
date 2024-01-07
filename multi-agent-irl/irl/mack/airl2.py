@@ -1,6 +1,8 @@
 import os.path as osp
 import random
 import time
+import pickle as pkl
+from decimal import *
 
 import joblib
 import numpy as np
@@ -8,16 +10,16 @@ import tensorflow as tf
 from scipy.stats import pearsonr, spearmanr
 from rl.acktr.utils import Scheduler, find_trainable_variables, discount_with_dones
 from rl.acktr.utils import cat_entropy, mse, onehot, multionehot
-from tqdm import tqdm
 
 from rl import logger
 from rl.acktr import kfac
 from rl.common import set_global_seeds, explained_variance
-from irl.mack.kfac_discriminator import Discriminator
-# from irl.mack.kfac_discriminator_wgan import Discriminator
+from irl.mack.kfac_discriminator_airl import Discriminator
 from irl.dataset import Dset
 from gym import spaces
 
+ARC_INDI_THRESHOLD = 250
+GOAL_STEP_THRESHOLD = 15 
 
 class Model(object):
     def __init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
@@ -58,20 +60,16 @@ class Model(object):
                 R.append(tf.placeholder(tf.float32, [nbatch * scale[k]]))
                 PG_LR.append(tf.placeholder(tf.float32, []))
 
-        # A = [tf.placeholder(tf.int32, [nbatch]) for _ in range(num_agents)]
-        # ADV = [tf.placeholder(tf.float32, [nbatch]) for _ in range(num_agents)]
-        # R = [tf.placeholder(tf.float32, [nbatch]) for _ in range(num_agents)]
-        # PG_LR = [tf.placeholder(tf.float32, []) for _ in range(num_agents)]
-        # VF_LR = [tf.placeholder(tf.float32, []) for _ in range(num_agents)]
         pg_loss, entropy, vf_loss, train_loss = [], [], [], []
         self.model = step_model = []
         self.model2 = train_model = []
         self.pg_fisher = pg_fisher_loss = []
         self.logits = logits = []
-        sample_net = []
+        self.sample_net = sample_net = []
         self.vf_fisher = vf_fisher_loss = []
         self.joint_fisher = joint_fisher_loss = []
         self.lld = lld = []
+        self.log_pac = []
 
         for k in range(num_agents):
             if identical[k]:
@@ -82,9 +80,10 @@ class Model(object):
                                          nenvs, 1, nstack, reuse=False, name='%d' % k))
                 train_model.append(policy(sess, ob_space[k], ac_space[k], ob_space, ac_space,
                                           nenvs * scale[k], nsteps, nstack, reuse=True, name='%d' % k))
-
             logpac = tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=train_model[k].pi, labels=A[k])
+            self.log_pac.append(-logpac)
+
             lld.append(tf.reduce_mean(logpac))
             logits.append(train_model[k].pi)
 
@@ -198,7 +197,10 @@ class Model(object):
                     R[k]: np.concatenate([rewards[j] for j in range(k, pointer[k])], axis=0),
                     PG_LR[k]: cur_lr / float(scale[k])
                 })
-                sess.run(train_ops[k], feed_dict=new_map)
+                try:
+                    sess.run(train_ops[k], feed_dict=new_map)
+                except:
+                    print("Failed to train generator!!!")
                 td_map.update(new_map)
 
                 if states[k] != []:
@@ -227,6 +229,33 @@ class Model(object):
                 td_map.update(new_map)
             lld_loss = sess.run([lld], td_map)
             return lld_loss
+
+        def get_log_action_prob(obs, actions):
+            action_prob = []
+            for k in range(num_agents):
+                if identical[k]:
+                    continue
+                new_map = {
+                    train_model[k].X: np.concatenate([obs[j] for j in range(k, pointer[k])], axis=0),
+                    A[k]: np.concatenate([actions[j] for j in range(k, pointer[k])], axis=0)
+                }
+                log_pac = sess.run(self.log_pac[k], feed_dict=new_map)
+                if scale[k] == 1:
+                    action_prob.append(log_pac)
+                else:
+                    log_pac = np.split(log_pac, scale[k], axis=0)
+                    action_prob += log_pac
+            return action_prob
+
+        self.get_log_action_prob = get_log_action_prob
+
+        def get_log_action_prob_step(obs, actions):
+            action_prob = []
+            for k in range(num_agents):
+                action_prob.append(step_model[k].step_log_prob(obs[k], actions[k]))
+            return action_prob
+
+        self.get_log_action_prob_step = get_log_action_prob_step
 
         def save(save_path):
             ps = sess.run(params_flat)
@@ -275,11 +304,12 @@ class Model(object):
 
 
 class Runner(object):
-    def __init__(self, env, model, discriminator, nsteps, nstack, gamma, lam, disc_type):
+    def __init__(self, env, model, discriminator, nsteps, nstack, gamma, lam, disc_type, nobs_flag=False):
         self.env = env
         self.model = model
         self.discriminator = discriminator
         self.disc_type = disc_type
+        self.nobs_flag = nobs_flag
         self.num_agents = len(env.observation_space)
         self.nenv = nenv = env.num_envs
         self.batch_ob_shape = [
@@ -295,6 +325,7 @@ class Runner(object):
         self.lam = lam
         self.nsteps = nsteps
         self.states = model.initial_state
+        #ac_space = env.action_space
         ac_space = [spaces.Discrete(4) for _ in range(2)]
         self.n_actions = [ac_space[k].n for k in range(self.num_agents)]
         self.dones = [np.array([False for _ in range(nenv)]) for k in range(self.num_agents)]
@@ -312,8 +343,10 @@ class Runner(object):
 
     def run(self):
         mb_obs = [[] for _ in range(self.num_agents)]
+        mb_obs_next = [[] for _ in range(self.num_agents)]
         mb_true_rewards = [[] for _ in range(self.num_agents)]
         mb_rewards = [[] for _ in range(self.num_agents)]
+        mb_report_rewards = [[] for _ in range(self.num_agents)]
         mb_actions = [[] for _ in range(self.num_agents)]
         mb_values = [[] for _ in range(self.num_agents)]
         mb_dones = [[] for _ in range(self.num_agents)]
@@ -321,6 +354,24 @@ class Runner(object):
         mb_is_goal = [[] for _ in range(self.num_agents)]
         mb_is_collision = [[] for _ in range(self.num_agents)]
         mb_states = self.states
+
+        arc_indi_obs = [[] for _ in range(self.num_agents)]
+        arc_indi_obs_next = [[] for _ in range(self.num_agents)]
+        arc_indi_all_obs = [[] for _ in range(self.num_agents)]
+        arc_indi_actions = [[] for _ in range(self.num_agents)]
+        arc_indi_values = [[] for _ in range(self.num_agents)]
+        arc_coop_obs = [[] for _ in range(self.num_agents)]
+        arc_coop_obs_next = [[] for _ in range(self.num_agents)]
+        arc_coop_all_obs = [[] for _ in range(self.num_agents)]
+        arc_coop_actions = [[] for _ in range(self.num_agents)]
+        arc_coop_values = [[] for _ in range(self.num_agents)]
+
+        obs = self.env.reset()
+        self.dones = [np.array([False for _ in range(self.nenv)]) for k in range(self.num_agents)]
+        self.update_obs(obs)
+        self.actions = [np.zeros((self.nenv, )) for _ in range(self.num_agents)]
+
+        traj_index = 0
         for n in range(self.nsteps):
             actions, values, states = self.model.step(self.obs, self.actions)
             self.actions = actions
@@ -334,44 +385,95 @@ class Runner(object):
                 traj_index += 1
                 obs = self.env.reset()
                 self.update_obs(obs)
-
-            if self.disc_type == 'decentralized':
-                rewards = [np.squeeze(self.discriminator[k].get_reward(
-                    self.obs[k], multionehot(self.actions[k], self.n_actions[k])))
-                    for k in range(self.num_agents)]
-            elif self.disc_type == 'centralized':
-                mul = [multionehot(self.actions[k], self.n_actions[k]) for k in range(self.num_agents)]
-                rewards = self.discriminator.get_reward(np.concatenate(self.obs, axis=1), np.concatenate(mul, axis=1))
-                rewards = rewards.swapaxes(1, 0)
-            elif self.disc_type == 'single':
-                mul = [multionehot(self.actions[k], self.n_actions[k]) for k in range(self.num_agents)]
-                rewards = self.discriminator.get_reward(np.concatenate(self.obs, axis=1), np.concatenate(mul, axis=1))
-                rewards = np.repeat(rewards, self.num_agents).reshape(len(rewards), self.num_agents)
-                rewards = rewards.swapaxes(1, 0)
-            else:
-                assert False
+                #self.info = [{} for _ in range(self.nenv)]
 
             for k in range(self.num_agents):
                 mb_obs[k].append(np.copy(self.obs[k]))
                 mb_actions[k].append(actions[k])
                 mb_values[k].append(values[k])
                 mb_dones[k].append(self.dones[k])
-                mb_rewards[k].append(rewards[k])
+
+
+
             actions_list = []
             for i in range(self.nenv):
                 actions_list.append([onehot(actions[k][i], self.n_actions[k]) for k in range(self.num_agents)])
+
             obs, true_rewards, dones, info = self.env.step(actions_list)
-            self.states = states
-            self.dones = dones
+
+            is_round = True
             for k in range(self.num_agents):
+                for l in range(len(obs[k])):
+                    if is_round:
+                        obs[k][l] = np.array([round(Decimal(obs[k][l][0]), 2), round(Decimal(obs[k][l][1]), 2)])
                 for ni, done in enumerate(dones[k]):
                     if done:
-                        self.obs[k][ni] = self.obs[k][ni] * 0.0
+                        obs[k][ni] = obs[k][ni] * 0.0
+            for k in range(self.num_agents):
+                mb_obs_next[k].append(np.copy(obs[k]))
+
+            re_obs = self.obs
+            re_actions = self.actions
+            re_obs_next = obs
+            re_path_prob = self.model.get_log_action_prob_step(re_obs, re_actions)  # [num_agent, nenv, 1]
+            re_actions_onehot = [multionehot(re_actions[k], self.n_actions[k]) for k in range(self.num_agents)]
+
+            # get reward from discriminator
+            if self.disc_type == 'decentralized':
+                rewards = []
+                report_rewards = []
+                for k in range(self.num_agents):
+                    rewards.append(np.squeeze(self.discriminator[k].get_reward(re_obs[k],
+                                                                               multionehot(re_actions[k], self.n_actions[k]),
+                                                                               re_obs_next[k],
+                                                                               re_path_prob[k],
+                                                                               discrim_score=False))) # For competitive tasks, log(D) - log(1-D) empirically works better (discrim_score=True)
+                    report_rewards.append(np.squeeze(self.discriminator[k].get_reward(re_obs[k],
+                                                                               multionehot(re_actions[k], self.n_actions[k]),
+                                                                               re_obs_next[k],
+                                                                               re_path_prob[k],
+                                                                               discrim_score=False)))
+            elif self.disc_type == 'decentralized-all':
+                rewards = []
+                report_rewards = []
+                for k in range(self.num_agents):
+                    rewards.append(np.squeeze(self.discriminator[k].get_reward(np.concatenate(re_obs, axis=1),
+                                                                               np.concatenate(re_actions_onehot, axis=1),
+                                                                               np.concatenate(re_obs_next, axis=1),
+                                                                               re_path_prob[k],
+                                                                               discrim_score=False))) # For competitive tasks, log(D) - log(1-D) empirically works better (discrim_score=True)
+                    report_rewards.append(np.squeeze(self.discriminator[k].get_reward(np.concatenate(re_obs, axis=1),
+                                                                               np.concatenate(re_actions_onehot, axis=1),
+                                                                               np.concatenate(re_obs_next, axis=1),
+                                                                               re_path_prob[k],
+                                                                               discrim_score=False)))
+            else:
+                assert False
+
+            for k in range(self.num_agents):
+                mb_rewards[k].append(rewards[k])
+                mb_report_rewards[k].append(report_rewards[k])
+                # mb_rewards[k].append([rewards[k]])
+                # mb_report_rewards[k].append([report_rewards[k]])
+
+                """
+                tf = np.array(['n' in info[i].keys() for i in range(len(info))])
+                if tf.all():
+                    mb_is_goal[k].append([info[i]['n'][k]['isGoal'] for i in range(len(info))])
+                    mb_is_collision[k].append([info[i]['n'][k]['isCollision'] for i in range(len(info))])
+                else:
+                    mb_is_goal[k].append([[False, False] for _ in range(self.nenv)])
+                    mb_is_collision[k].append([[False, False] for _ in range(self.nenv)])"""
+           
+
+            self.states = states
+            self.dones = dones
             self.update_obs(obs)
             self.info = info
 
             for k in range(self.num_agents):
                 mb_true_rewards[k].append(true_rewards[k])
+
                 is_goal = []
                 is_collision = []
                 for l in range(len(self.info)):
@@ -386,15 +488,24 @@ class Runner(object):
                         is_collision.append(self.info[l]['n'][k]['isCollision'])
                 mb_is_goal[k].append(is_goal)
                 mb_is_collision[k].append(is_collision)
-
         for k in range(self.num_agents):
             mb_dones[k].append(self.dones[k])
 
         # batch of steps to batch of rollouts
+        traj_obs = [[] for _ in range(self.num_agents)]
+        traj_obs_next = [[] for _ in range(self.num_agents)]
+
         for k in range(self.num_agents):
+            traj_obs[k] = np.asarray(mb_obs[k], dtype=np.float32).swapaxes(1, 0)
+            traj_nobs = traj_obs[k].copy()
+            traj_nobs[:-1] = traj_obs[k][1:]
+            traj_nobs[-1] = traj_obs[k][0]
+            traj_obs_next[k] = traj_nobs.copy()
             mb_obs[k] = np.asarray(mb_obs[k], dtype=np.float32).swapaxes(1, 0).reshape(self.batch_ob_shape[k])
+            mb_obs_next[k] = np.asarray(mb_obs_next[k], dtype=np.float32).swapaxes(1, 0).reshape(self.batch_ob_shape[k])
             mb_true_rewards[k] = np.asarray(mb_true_rewards[k], dtype=np.float32).swapaxes(1, 0)
             mb_rewards[k] = np.asarray(mb_rewards[k], dtype=np.float32).swapaxes(1, 0)
+            mb_report_rewards[k] = np.asarray(mb_report_rewards[k], dtype=np.float32).swapaxes(1, 0)
             mb_actions[k] = np.asarray(mb_actions[k], dtype=np.int32).swapaxes(1, 0)
             mb_values[k] = np.asarray(mb_values[k], dtype=np.float32).swapaxes(1, 0)
             mb_dones[k] = np.asarray(mb_dones[k], dtype=np.bool).swapaxes(1, 0)
@@ -402,7 +513,9 @@ class Runner(object):
             mb_dones[k] = mb_dones[k][:, 1:]
             mb_is_goal[k] = np.asarray(mb_is_goal[k], dtype=np.bool).swapaxes(1, 0)
             mb_is_collision[k] = np.asarray(mb_is_collision[k], dtype=np.bool).swapaxes(1, 0)
-
+        #print(mb_obs[0])
+        #print(traj_obs[0][0])
+        #print(mb_is_goal[0][0])
         for k in range(self.num_agents):
             ep_rews = []
             cols = []
@@ -436,71 +549,66 @@ class Runner(object):
             logger.record_tabular('collision %d' % k, float(np.mean(cols)))
             logger.record_tabular('goal %d' % k, float(np.mean(goals)))
             logger.record_tabular('steps %d' % k, float(np.mean(steps)))
-
-        # last_values = self.model.value(self.obs, self.actions)
-        #
-        # mb_advs = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
-        # mb_returns = [[] for _ in range(self.num_agents)]
-        #
-        # lastgaelam = 0.0
-        # for k in range(self.num_agents):
-        #     for t in reversed(range(self.nsteps)):
-        #         if t == self.nsteps - 1:
-        #             nextnonterminal = 1.0 - self.dones[k]
-        #             nextvalues = last_values[k]
-        #         else:
-        #             nextnonterminal = 1.0 - mb_dones[k][:, t + 1]
-        #             nextvalues = mb_values[k][:, t + 1]
-        #         delta = mb_rewards[k][:, t] + self.gamma * nextvalues * nextnonterminal - mb_values[k][:, t]
-        #         mb_advs[k][:, t] = lastgaelam = delta + self.gamma * self.lam * nextnonterminal * lastgaelam
-        #     mb_returns[k] = mb_advs[k] + mb_values[k]
-        #     mb_returns[k] = mb_returns[k].flatten()
-        #     mb_masks[k] = mb_masks[k].flatten()
-        #     mb_values[k] = mb_values[k].flatten()
-        #     mb_actions[k] = mb_actions[k].flatten()
-
         mb_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
+        mb_report_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
         mb_true_returns = [np.zeros_like(mb_rewards[k]) for k in range(self.num_agents)]
         last_values = self.model.value(self.obs, self.actions)
         # discount/bootstrap off value fn
         for k in range(self.num_agents):
-            for n, (rewards, true_rewards, dones, value) in enumerate(zip(mb_rewards[k], mb_true_rewards[k], mb_dones[k], last_values[k].tolist())):
+            for n, (rewards, report_rewards, true_rewards, dones, value) in enumerate(zip(mb_rewards[k], mb_report_rewards[k], mb_true_rewards[k], mb_dones[k], last_values[k].tolist())):
                 rewards = rewards.tolist()
+                report_rewards = report_rewards.tolist()
                 dones = dones.tolist()
                 true_rewards = true_rewards.tolist()
                 if dones[-1] == 0:
                     rewards = discount_with_dones(rewards + [value], dones + [0], self.gamma)[:-1]
+                    report_rewards = discount_with_dones(report_rewards + [value], dones + [0], self.gamma)[:-1]
                     true_rewards = discount_with_dones(true_rewards + [value], dones + [0], self.gamma)[:-1]
                 else:
                     rewards = discount_with_dones(rewards, dones, self.gamma)
+                    report_rewards = discount_with_dones(report_rewards, dones, self.gamma)
                     true_rewards = discount_with_dones(true_rewards, dones, self.gamma)
                 mb_returns[k][n] = rewards
+                mb_report_returns[k][n] = report_rewards
                 mb_true_returns[k][n] = true_rewards
 
         for k in range(self.num_agents):
             mb_returns[k] = mb_returns[k].flatten()
+            mb_report_returns[k] = mb_report_returns[k].flatten()
             mb_masks[k] = mb_masks[k].flatten()
             mb_values[k] = mb_values[k].flatten()
             mb_actions[k] = mb_actions[k].flatten()
 
         mh_actions = [multionehot(mb_actions[k], self.n_actions[k]) for k in range(self.num_agents)]
         mb_all_obs = np.concatenate(mb_obs, axis=1)
+        mb_all_nobs = np.concatenate(mb_obs_next, axis=1)
         mh_all_actions = np.concatenate(mh_actions, axis=1)
-        return mb_obs, mb_states, mb_returns, mb_masks, mb_actions,\
-               mb_values, mb_all_obs, mh_actions, mh_all_actions, mb_rewards, mb_true_rewards, mb_true_returns
+        if self.nobs_flag:
+            return mb_obs, mb_obs_next, mb_states, mb_returns, mb_report_returns, mb_masks, mb_actions, \
+                   mb_values, mb_all_obs, mb_all_nobs, mh_actions, mh_all_actions, mb_rewards, mb_true_rewards, mb_true_returns, \
+                   arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs,\
+                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, mb_is_goal, mb_is_collision
+        else:
+            return mb_obs, mb_states, mb_returns, mb_report_returns, mb_masks, mb_actions,\
+                   mb_values, mb_all_obs, mh_actions, mh_all_actions, mb_rewards, mb_true_rewards, mb_true_returns,\
+                   arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs,\
+                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, mb_is_goal, mb_is_collision
 
 
 def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.99, lam=0.95, log_interval=1, nprocs=32,
           nsteps=20, nstack=1, ent_coef=0.01, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
           kfac_clip=0.001, save_interval=1000, lrschedule='linear', dis_lr=0.001, disc_type='decentralized',
-          bc_iters=500, identical=None):
+          bc_iters=500, identical=None, l2=0.1, d_iters=1, rew_scale=0.1):
     tf.reset_default_graph()
     set_global_seeds(seed)
     buffer = None
+    archive_indi_buffer = None
+    archive_coop_buffer = None
 
     nenvs = env.num_envs
     ob_space = env.observation_space
     #ac_space = env.action_space
+    print(f'行動空間を強制的に４に変更します。これは，5番目の行動（Stop）をしないようにするためです。:')
     ac_space = [spaces.Discrete(4) for _ in range(2)]
     num_agents = (len(ob_space))
     make_model = lambda: Model(policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=nprocs, nsteps=nsteps,
@@ -512,88 +620,193 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
         with open(osp.join(logger.get_dir(), 'make_model.pkl'), 'wb') as fh:
             fh.write(cloudpickle.dumps(make_model))
     model = make_model()
-    if disc_type == 'decentralized':
+    if disc_type == 'decentralized' or disc_type == 'decentralized-all':
         discriminator = [
-            Discriminator(model.sess, ob_space, ac_space, nstack, k, disc_type=disc_type,
+            Discriminator(model.sess, ob_space, ac_space,
+                          state_only=False, discount=gamma, nstack=nstack, index=k, disc_type=disc_type,
                           scope="Discriminator_%d" % k, # gp_coef=gp_coef,
                           total_steps=total_timesteps // (nprocs * nsteps),
-                          lr_rate=dis_lr) for k in range(num_agents)
+                          lr_rate=dis_lr, l2_loss_ratio=l2) for k in range(num_agents)
         ]
-    elif disc_type == 'centralized':
-        discriminator = Discriminator(model.sess, ob_space, ac_space, nstack, 0, disc_type=disc_type,
-                                      total_steps=total_timesteps // (nprocs * nsteps),
-                                      scope='discriminator', # gp_coef=gp_coef,
-                                      lr_rate=dis_lr)
-    elif disc_type == 'single':
-        discriminator = Discriminator(model.sess, ob_space, ac_space, nstack, 0, disc_type=disc_type,
-                                      total_steps=total_timesteps // (nprocs * nsteps),
-                                      scope='discriminator', # gp_coef=gp_coef,
-                                      lr_rate=dis_lr)
     else:
         assert False
+
+    # add reward regularization
+    if env_id == 'simple_tag':
+        reward_reg_loss = tf.reduce_mean(
+            tf.square(discriminator[0].reward + discriminator[3].reward) +
+            tf.square(discriminator[1].reward + discriminator[3].reward) +
+            tf.square(discriminator[2].reward + discriminator[3].reward)
+        ) + rew_scale * tf.reduce_mean(
+            tf.maximum(0.0, 1 - discriminator[0].reward) +
+            tf.maximum(0.0, 1 - discriminator[1].reward) +
+            tf.maximum(0.0, 1 - discriminator[2].reward) +
+            tf.maximum(0.0, discriminator[3].reward + 1)
+        )
+        reward_reg_lr = tf.placeholder(tf.float32, ())
+        reward_reg_optim = tf.train.AdamOptimizer(learning_rate=reward_reg_lr)
+        reward_reg_train_op = reward_reg_optim.minimize(reward_reg_loss)
+
     tf.global_variables_initializer().run(session=model.sess)
-    runner = Runner(env, model, discriminator, nsteps=nsteps, nstack=nstack, gamma=gamma, lam=lam, disc_type=disc_type)
+    runner = Runner(env, model, discriminator, nsteps=nsteps, nstack=nstack, gamma=gamma, lam=lam, disc_type=disc_type,
+                    nobs_flag=True)
     nbatch = nenvs * nsteps
     tstart = time.time()
     coord = tf.train.Coordinator()
     # enqueue_threads = [q_runner.create_threads(model.sess, coord=coord, start=True) for q_runner in model.q_runner]
     for _ in range(bc_iters):
-        e_obs, e_actions, _, _ = expert.get_next_batch(nenvs * nsteps)
+        e_obs, e_actions, e_nobs, _, _ = expert.get_next_batch(nenvs * nsteps)
         e_a = [np.argmax(e_actions[k], axis=1) for k in range(len(e_actions))]
-        #lld_loss = model.clone(e_obs, e_a)
-        # print(lld_loss)
+        lld_loss = model.clone(e_obs, e_a)
 
-    for update in tqdm(range(1, total_timesteps // nbatch + 1)):
-        obs, states, rewards, masks, actions, values, all_obs,\
-        mh_actions, mh_all_actions, mh_rewards, mh_true_rewards, mh_true_returns = runner.run()
 
-        d_iters = 1
-        g_loss, e_loss = np.zeros((num_agents, d_iters)), np.zeros((num_agents, d_iters))
+    mb_arc_indi_obs = [np.array([]) for _ in range(num_agents)]
+    mb_arc_indi_actions = [np.array([]) for _ in range(num_agents)]
+    mb_arc_indi_obs_next = [np.array([]) for _ in range(num_agents)]
+    mb_arc_indi_all_obs = np.array([]) 
+    mb_arc_indi_values = [np.array([]) for _ in range(num_agents)]
+    mb_arc_coop_obs = [np.array([]) for _ in range(num_agents)]
+    mb_arc_coop_actions = [np.array([]) for _ in range(num_agents)]
+    mb_arc_coop_obs_next = [np.array([]) for _ in range(num_agents)]
+    mb_arc_coop_all_obs = np.array([])
+    mb_arc_coop_values = [np.array([]) for _ in range(num_agents)]
+    archive_indi_num = np.zeros(num_agents)
+    archive_coop_num = np.zeros(num_agents)
+
+
+    update_policy_until = 10
+
+    for update in range(1, total_timesteps // nbatch + 1):
+        obs, obs_next, states, rewards, report_rewards, masks, actions, values, all_obs, all_nobs,\
+        mh_actions, mh_all_actions, mh_rewards, mh_true_rewards, mh_true_returns,\
+        arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs,\
+        arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, mh_is_goal, mh_is_collision = runner.run()
+
+        total_loss = np.zeros((num_agents, d_iters))
+
         idx = 0
         idxs = np.arange(len(all_obs))
         random.shuffle(idxs)
         all_obs = all_obs[idxs]
         mh_actions = [mh_actions[k][idxs] for k in range(num_agents)]
         mh_obs = [obs[k][idxs] for k in range(num_agents)]
+        mh_obs_next = [obs_next[k][idxs] for k in range(num_agents)]
         mh_values = [values[k][idxs] for k in range(num_agents)]
 
         if buffer:
-            buffer.update(mh_obs, mh_actions, None, all_obs, mh_values)
+            buffer.update(mh_obs, mh_actions, mh_obs_next, all_obs, mh_values)
         else:
-            buffer = Dset(mh_obs, mh_actions, None, all_obs, mh_values, randomize=True, num_agents=num_agents)
+            buffer = Dset(mh_obs, mh_actions, mh_obs_next, all_obs, mh_values, randomize=True, num_agents=num_agents,
+                          nobs_flag=True)
+        for k in range(num_agents):
+            if not arc_indi_obs[k]: continue
+            mb_arc_indi_obs[k] = np.array(mb_arc_indi_obs[k].tolist() + arc_indi_obs[k])[-100:, :]
+            mb_arc_indi_actions[k] = np.array(mb_arc_indi_actions[k].tolist() + arc_indi_actions[k])[-100:, :]
+            mb_arc_indi_obs_next[k] = np.array(mb_arc_indi_obs_next[k].tolist() + arc_indi_obs_next[k])[-100:, :]
+            mb_arc_indi_all_obs = np.array(mb_arc_indi_all_obs.tolist() + arc_indi_obs[k])[-100:, :]
+            mb_arc_indi_values[k] = np.array(mb_arc_indi_values[k].tolist() + arc_indi_values[k])[-100:]
+            archive_indi_num[k] += len(arc_indi_obs[k])/nsteps
+
+            if not arc_coop_obs[k]: continue
+            mb_arc_coop_obs[k] =  np.array(mb_arc_coop_obs[k].tolist() + arc_coop_obs[k])[-100:, :]
+            mb_arc_coop_actions[k] = np.array(mb_arc_coop_actions[k].tolist() + arc_coop_actions[k])[-100:, :]
+            mb_arc_coop_obs_next[k] = np.array(mb_arc_coop_obs_next[k].tolist() + arc_coop_obs_next[k])[-100:, :]
+            mb_arc_coop_all_obs = np.array(mb_arc_coop_all_obs.tolist() + arc_coop_obs[k])[-100:, :]
+            mb_arc_coop_values[k] = np.array(mb_arc_coop_values[k].tolist() + arc_coop_values[k])[-100:]
+            archive_coop_num[k] += len(arc_coop_obs[k])/nsteps
+        
 
         d_minibatch = nenvs * nsteps
+        d_minibatch_quarter = int(d_minibatch/4)
+        d_minibatch_half = d_minibatch_quarter*2 
+        d_minibatch = d_minibatch_half*2
 
         for d_iter in range(d_iters):
-            e_obs, e_actions, e_all_obs, _ = expert.get_next_batch(d_minibatch)
-            g_obs, g_actions, g_all_obs, _ = buffer.get_next_batch(batch_size=d_minibatch)
+            expert_batch = [d_minibatch, 0, 0]
+                
+            if expert_batch[0]!=0: 
+                e_obs, e_actions, e_nobs, e_all_obs, _ = expert.get_next_batch(expert_batch[0])
+            else:
+                e_obs = None
+            g_obs, g_actions, g_nobs, g_all_obs, _ = buffer.get_next_batch(batch_size=d_minibatch)
+            print(expert_batch)
+
+                
+            e_obs2 = []
+            e_nobs2 = []
+            g_obs2 = []
+            g_nobs2 = []
+            for k in range(num_agents):
+                e_obs_round = [[round(num[0], 2), round(num[1], 2)] for num in e_obs[k]] 
+                e_obs2.append(e_obs_round)
+
+                e_nobs_round = [[round(num[0], 2), round(num[1], 2)] for num in e_nobs[k]]
+                e_nobs2.append(e_nobs_round)
+
+                g_obs_round = [[round(num[0], 2), round(num[1], 2)] for num in g_obs[k]]
+                g_obs2.append(g_obs_round)
+
+                g_nobs_round = [[round(num[0], 2), round(num[1], 2)] for num in g_nobs[k]]
+                g_nobs2.append(g_nobs_round)
+
+            e_obs = np.array(e_obs2)
+            e_nobs = np.array(e_nobs2)
+            g_obs = np.array(g_obs2)
+            g_nobs = np.array(g_nobs2)
+
+            e_a = [np.argmax(e_actions[k], axis=1) for k in range(len(e_actions))]
+            g_a = [np.argmax(g_actions[k], axis=1) for k in range(len(g_actions))]
+
+            g_log_prob = model.get_log_action_prob(g_obs, g_a)
+            e_log_prob = model.get_log_action_prob(e_obs, e_a)
             if disc_type == 'decentralized':
                 for k in range(num_agents):
-                    g_loss[k, d_iter], e_loss[k, d_iter], _, _ = discriminator[k].train(
+                    total_loss[k, d_iter] = discriminator[k].train(
                         g_obs[k],
                         g_actions[k],
+                        g_nobs[k],
+                        g_log_prob[k].reshape([-1, 1]),
                         e_obs[k],
-                        e_actions[k]
+                        e_actions[k],
+                        e_nobs[k],
+                        e_log_prob[k].reshape([-1, 1])
                     )
-            elif disc_type == 'centralized':
-                g_loss_t, e_loss_t, _, _ = discriminator.train(
-                    g_all_obs,
-                    np.concatenate(g_actions, axis=1),
-                    e_all_obs, np.concatenate(e_actions, axis=1))
-                g_loss[:, d_iter] = g_loss_t
-                e_loss[:, d_iter] = e_loss_t
-            elif disc_type == 'single':
-                g_loss_t, e_loss_t, _, _ = discriminator.train(
-                    g_all_obs,
-                    np.concatenate(g_actions, axis=1),
-                    e_all_obs, np.concatenate(e_actions, axis=1))
-                g_loss[:, d_iter] = g_loss_t
-                e_loss[:, d_iter] = e_loss_t
+            elif disc_type == 'decentralized-all':
+                g_obs_all = np.concatenate(g_obs, axis=1)
+                g_actions_all = np.concatenate(g_actions, axis=1)
+                g_nobs_all = np.concatenate(g_nobs, axis=1)
+                e_obs_all = np.concatenate(e_obs, axis=1)
+                e_actions_all = np.concatenate(e_actions, axis=1)
+                e_nobs_all = np.concatenate(e_nobs, axis=1)
+                for k in range(num_agents):
+                    total_loss[k, d_iter] = discriminator[k].train(
+                        g_obs_all,
+                        g_actions_all,
+                        g_nobs_all,
+                        g_log_prob[k].reshape([-1, 1]),
+                        e_obs_all,
+                        e_actions_all,
+                        e_nobs_all,
+                        e_log_prob[k].reshape([-1, 1])
+                    )
             else:
                 assert False
+
+            if env_id == 'simple_tag':
+                if disc_type == 'decentralized':
+                    feed_dict = {discriminator[k].obs: np.concatenate([g_obs[k], e_obs[k]], axis=0)
+                                 for k in range(num_agents)}
+                elif disc_type == 'decentralized-all':
+                    feed_dict = {discriminator[k].obs: np.concatenate([g_obs_all, e_obs_all], axis=0)
+                                 for k in range(num_agents)}
+                else:
+                    assert False
+                feed_dict[reward_reg_lr] = discriminator[0].lr.value()
+                model.sess.run(reward_reg_train_op, feed_dict=feed_dict)
+
             idx += 1
 
-        if update > 10:
+        if update > update_policy_until:  # 10 policy_loss, value_loss, policy_entropy = model.train(obs, states, rewards, masks, actions, values)
             policy_loss, value_loss, policy_entropy = model.train(obs, states, rewards, masks, actions, values)
         model.old_obs = obs
         nseconds = time.time() - tstart
@@ -606,57 +819,44 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
 
             for k in range(model.num_agents):
                 logger.record_tabular("explained_variance %d" % k, float(ev[k]))
-                if update > 10:
+                if update > update_policy_until:
                     logger.record_tabular("policy_entropy %d" % k, float(policy_entropy[k]))
                     logger.record_tabular("policy_loss %d" % k, float(policy_loss[k]))
                     logger.record_tabular("value_loss %d" % k, float(value_loss[k]))
+                    logger.record_tabular("archive_indi_num %d" %k, int(archive_indi_num[k]))
+                    logger.record_tabular("archive_coop_num %d" %k, int(archive_coop_num[k]))
                     try:
                         logger.record_tabular('pearson %d' % k, float(
-                            pearsonr(rewards[k].flatten(), mh_true_returns[k].flatten())[0]))
-                        logger.record_tabular('reward %d' % k, float(np.mean(rewards[k])))
+                            pearsonr(report_rewards[k].flatten(), mh_true_returns[k].flatten())[0]))
                         logger.record_tabular('spearman %d' % k, float(
-                            spearmanr(rewards[k].flatten(), mh_true_returns[k].flatten())[0]))
+                            spearmanr(report_rewards[k].flatten(), mh_true_returns[k].flatten())[0]))
+                        logger.record_tabular('reward %d' % k, float(np.mean(rewards[k])))
                     except:
                         pass
-            if update > 10 and env_id == 'simple_tag':
-                try:
-                    logger.record_tabular('in_pearson_0_2', float(
-                        pearsonr(rewards[0].flatten(), rewards[2].flatten())[0]))
-                    logger.record_tabular('in_pearson_1_2', float(
-                        pearsonr(rewards[1].flatten(), rewards[2].flatten())[0]))
-                    logger.record_tabular('in_spearman_0_2', float(
-                        spearmanr(rewards[0].flatten(), rewards[2].flatten())[0]))
-                    logger.record_tabular('in_spearman_1_2', float(
-                        spearmanr(rewards[1].flatten(), rewards[2].flatten())[0]))
-                except:
-                    pass
+                    #logger.record_tabular('true reward %d' % k, float(np.mean(mh_true_returns[k])))
+                    #ep_rew = np.mean(np.sum(np.array(mh_true_rewards[k][:]), axis=1))
+                    #logger.record_tabular('Exp. Ret %d' % k, float(np.sum(mh_true_rewards[k])/(nenvs * len(mh_true_rewards[k][0])/50)))
 
-            g_loss_m = np.mean(g_loss, axis=1)
-            e_loss_m = np.mean(e_loss, axis=1)
-            # g_loss_gp_m = np.mean(g_loss_gp, axis=1)
-            # e_loss_gp_m = np.mean(e_loss_gp, axis=1)
+            total_loss_m = np.mean(total_loss, axis=1)
             for k in range(num_agents):
-                logger.record_tabular("g_loss %d" % k, g_loss_m[k])
-                logger.record_tabular("e_loss %d" % k, e_loss_m[k])
-                # logger.record_tabular("g_loss_gp %d" % k, g_loss_gp_m[k])
-                # logger.record_tabular("e_loss_gp %d" % k, e_loss_gp_m[k])
-
+                logger.record_tabular("total_loss %d" % k, total_loss_m[k])
             logger.dump_tabular()
 
         if save_interval and (update % save_interval == 0 or update == 1) and logger.get_dir():
             savepath = osp.join(logger.get_dir(), 'm_%.5i' % update)
             print('Saving to', savepath)
             model.save(savepath)
-            if disc_type == 'decentralized':
+            pkl.dump(mb_arc_indi_obs, open(osp.join(logger.get_dir(), f'archive_indi_obs{update:05}.pkl'), 'wb'))
+            pkl.dump(mb_arc_indi_actions, open(osp.join(logger.get_dir(), f'archive_indi_actions{update:05}.pkl'), 'wb'))
+            pkl.dump(mb_arc_indi_obs_next, open(osp.join(logger.get_dir(), f'archive_indi_obs_next{update:05}.pkl'), 'wb'))
+            pkl.dump(mb_arc_coop_obs, open(osp.join(logger.get_dir(), f'archive_coop_obs{update:05}.pkl'), 'wb'))
+            pkl.dump(mb_arc_coop_actions, open(osp.join(logger.get_dir(), f'archive_coop_actions{update:05}.pkl'), 'wb'))
+            pkl.dump(mb_arc_coop_obs_next, open(osp.join(logger.get_dir(), f'archive_coop_obs_next{update:05}.pkl'), 'wb'))
+            if disc_type == 'decentralized' or disc_type == 'decentralized-all':
                 for k in range(num_agents):
                     savepath = osp.join(logger.get_dir(), 'd_%d_%.5i' % (k, update))
                     discriminator[k].save(savepath)
-            elif disc_type == 'centralized':
-                savepath = osp.join(logger.get_dir(), 'd_%.5i' % update)
-                discriminator.save(savepath)
-            elif disc_type == 'single':
-                savepath = osp.join(logger.get_dir(), 'd_%.5i' % update)
-                discriminator.save(savepath)
+            else:
+                assert False
     coord.request_stop()
     # coord.join(enqueue_threads)
-    env.close()

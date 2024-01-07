@@ -11,7 +11,7 @@ from rl import logger
 from rl.common import set_global_seeds
 from rl.common.vec_env.subproc_vec_env import SubprocVecEnv
 from irl.dataset import MADataSet
-from irl.mack.aairl import learn
+from irl.mack.airl2 import learn
 from sandbox.mack.policies import CategoricalPolicy
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -64,12 +64,12 @@ def main(logdir, env, expert_path, seed, traj_limitation, ret_threshold, dis_lr,
     env_ids = [env]
     lrs = [0.1]
     seeds = [seed]
-    batch_sizes = [500]
+    batch_sizes = [100]
 
     for env_id, seed, lr, batch_size in itertools.product(env_ids, seeds, lrs, batch_sizes):
-        train(logdir + '/aairl/' + env_id + '/' + disc_type + '/s-{}/l-{}-b-{}-d-{}-c-{}-l2-{}-iter-{}-r-{}/seed-{}'.format(
+        train(logdir + '/airl/' + env_id + '/' + disc_type + '/s-{}/l-{}-b-{}-d-{}-c-{}-l2-{}-iter-{}-r-{}/seed-{}'.format(
               traj_limitation, lr, batch_size, dis_lr, bc_iters, l2, d_iters, rew_scale, seed),
-              env_id, 800*500, lr, batch_size, seed, 10, expert_path,
+              env_id, 90000*100, lr, batch_size, seed, 2, expert_path,
               traj_limitation, ret_threshold, dis_lr, disc_type=disc_type, bc_iters=bc_iters, l2=l2, d_iters=d_iters, rew_scale=rew_scale, discrete=discrete, grid_size=grid_size)
 
 
