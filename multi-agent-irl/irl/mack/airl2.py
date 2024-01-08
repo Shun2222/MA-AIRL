@@ -20,6 +20,22 @@ from gym import spaces
 
 ARC_INDI_THRESHOLD = 250
 GOAL_STEP_THRESHOLD = 15 
+MAX_ARC = 100 
+
+def sort_arc(arc, scores):
+    idxs = sorted(range(len(scores)), key=lambda i: scores[i])
+    sorted_arc = [arc[i] for i in idxs]
+    sorted_scores = [scores[i] for i in idxs]
+    return sorted_arc, sorted_scores
+    
+def push_arc(arc, target, arc_scores, target_score):
+
+    if np.min(arc_scores)>target_score:
+        return arc, arc_scores
+    
+    arc[0] = target
+    arc_scores[0] = target_score
+    return sort_arc(arc, arc_scores)
 
 class Model(object):
     def __init__(self, policy, ob_space, ac_space, nenvs, total_timesteps, nprocs=2, nsteps=200,
@@ -360,32 +376,38 @@ class Runner(object):
         arc_indi_all_obs = [[] for _ in range(self.num_agents)]
         arc_indi_actions = [[] for _ in range(self.num_agents)]
         arc_indi_values = [[] for _ in range(self.num_agents)]
+        arc_indi_scores = [[] for _ in range(self.num_agents)]
         arc_coop_obs = [[] for _ in range(self.num_agents)]
         arc_coop_obs_next = [[] for _ in range(self.num_agents)]
         arc_coop_all_obs = [[] for _ in range(self.num_agents)]
         arc_coop_actions = [[] for _ in range(self.num_agents)]
         arc_coop_values = [[] for _ in range(self.num_agents)]
+        arc_coop_scores = [[] for _ in range(self.num_agents)]
 
         obs = self.env.reset()
         self.dones = [np.array([False for _ in range(self.nenv)]) for k in range(self.num_agents)]
         self.update_obs(obs)
         self.actions = [np.zeros((self.nenv, )) for _ in range(self.num_agents)]
+        reset_steps = [] 
 
-        traj_index = 0
         for n in range(self.nsteps):
             actions, values, states = self.model.step(self.obs, self.actions)
             self.actions = actions
 
-            not_all_done = False 
-            for k in range(self.num_agents):
-                if not self.dones[0][k]:
-                    not_all_done = True
-            if not not_all_done:
-                # 初期化されると観測値に0.0が帰ってくるのでここで捨てる
-                traj_index += 1
-                obs = self.env.reset()
-                self.update_obs(obs)
-                #self.info = [{} for _ in range(self.nenv)]
+            """
+            for l in range(self.nenv):
+                not_all_done = False 
+                for k in range(self.num_agents):
+                    if not self.dones[k][l]:
+                            not_all_done = True
+                if not not_all_done:
+                    # 初期化されると観測値に0.0が帰ってくるのでここで捨てる
+                    for k in range(self.num_agents):
+                        for l in range(self.nenv):
+                            self.dones[k][l] = True
+                    obs = self.env.reset()
+                    self.update_obs(obs)
+                    reset_steps.append(n)"""
 
             for k in range(self.num_agents):
                 mb_obs[k].append(np.copy(self.obs[k]))
@@ -453,17 +475,6 @@ class Runner(object):
             for k in range(self.num_agents):
                 mb_rewards[k].append(rewards[k])
                 mb_report_rewards[k].append(report_rewards[k])
-                # mb_rewards[k].append([rewards[k]])
-                # mb_report_rewards[k].append([report_rewards[k]])
-
-                """
-                tf = np.array(['n' in info[i].keys() for i in range(len(info))])
-                if tf.all():
-                    mb_is_goal[k].append([info[i]['n'][k]['isGoal'] for i in range(len(info))])
-                    mb_is_collision[k].append([info[i]['n'][k]['isCollision'] for i in range(len(info))])
-                else:
-                    mb_is_goal[k].append([[False, False] for _ in range(self.nenv)])
-                    mb_is_collision[k].append([[False, False] for _ in range(self.nenv)])"""
            
 
             self.states = states
@@ -513,21 +524,31 @@ class Runner(object):
             mb_dones[k] = mb_dones[k][:, 1:]
             mb_is_goal[k] = np.asarray(mb_is_goal[k], dtype=np.bool).swapaxes(1, 0)
             mb_is_collision[k] = np.asarray(mb_is_collision[k], dtype=np.bool).swapaxes(1, 0)
-        #print(mb_obs[0])
-        #print(traj_obs[0][0])
-        #print(mb_is_goal[0][0])
+
         for k in range(self.num_agents):
             ep_rews = []
             cols = []
             goals = []
             steps = []
             for t in range(len(traj_obs)):
-                traj_len = [np.where(mb_dones[k2][t])[0] for k2 in range(self.num_agents)]
-                traj_len = [traj_len[k2] - np.concatenate([[-1], traj_len[k2][:-1]]) for k2 in range(self.num_agents)]
+                all_dones = mb_dones[0][t] & mb_dones[1][t]
+                all_dones_idx = np.where(all_dones)[0]
+
+                if len(all_dones_idx)==0:
+                    continue
+                prev_ad = 0
+                traj_len = [[] for _ in range(self.num_agents)]
+                for ad in all_dones_idx:
+                    for k2 in range(self.num_agents):
+                        traj_len[k2].append(ad - prev_ad + 1 - np.sum(mb_is_goal[k2][t][prev_ad:ad]))
+                        #print(f'k2{k2}, t{t}, pad{prev_ad}, ad{ad}')
+                    prev_ad = ad+1
+
                 sprev = 0
-                for idx, s in enumerate(np.where(mb_dones[k][t])[0]):
+                for idx, s in enumerate(all_dones_idx):
                     traj_tf = np.array([False for _ in range(len(mb_dones[k][t]))])
-                    traj_tf[sprev:s+1] = True
+                    traj_tf[sprev:sprev+traj_len[k][idx]] = True
+
                     mb_is_collision[k][t][traj_tf][-1] = False # 最後がTrueになっちゃうので強制的に変更
                     ep_rew = np.sum(np.array(mb_true_rewards[k][t][traj_tf]))
                     goal = np.sum(np.array(mb_is_goal[k][t][traj_tf]))
@@ -535,13 +556,26 @@ class Runner(object):
                     if ep_rew==np.nan:
                         print("ep_rew is nan!!!!")
                     else:
-                        print(f"ep_rew{k}: {ep_rew}, goal:{goal}, col{col}")
+                        #print(f"ep_rew{k}: {ep_rew}, goal:{goal}, col{col}")
                         ep_rews.append(ep_rew)
                         cols.append(col)
                         goals.append(goal)
                         steps.append(traj_len[k][idx])
-                    if idx>=len(traj_len[0]) or idx>=len(traj_len[1]):
+                        traj = traj_obs[k][t][traj_tf]
+                        traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj] 
+                        traj_obs_round[0] = [-0.9, 0.9] if k==0 else [0.9, 0.9]
+                    if goal<1:
                         continue
+                    if len(traj_len[0]) <= idx or len(traj_len[1]) <= idx:
+                        continue
+
+                    if traj_len[0][idx] < GOAL_STEP_THRESHOLD and traj_len[1][idx] < GOAL_STEP_THRESHOLD: # if agent reached goal, they archive thier info
+
+                        traj = traj_obs[k][t][traj_tf]
+                        traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj] 
+                        traj_obs_round[0] = [-0.9, 0.9] if k==0 else [0.9, 0.9]
+                        col = np.sum(np.array(mb_is_collision[k][t][traj_tf]))
+                        #if not any(mb_true_rewards[k][t]<=-100): # if agent reached goal without collision, they archive info
                     sprev = s+1
 
 
@@ -586,18 +620,18 @@ class Runner(object):
         if self.nobs_flag:
             return mb_obs, mb_obs_next, mb_states, mb_returns, mb_report_returns, mb_masks, mb_actions, \
                    mb_values, mb_all_obs, mb_all_nobs, mh_actions, mh_all_actions, mb_rewards, mb_true_rewards, mb_true_returns, \
-                   arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs,\
-                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, mb_is_goal, mb_is_collision
+                   arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs, arc_indi_scores,\
+                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs,arc_coop_scores, mb_is_goal, mb_is_collision
         else:
             return mb_obs, mb_states, mb_returns, mb_report_returns, mb_masks, mb_actions,\
                    mb_values, mb_all_obs, mh_actions, mh_all_actions, mb_rewards, mb_true_rewards, mb_true_returns,\
-                   arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs,\
-                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, mb_is_goal, mb_is_collision
+                   arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs, arc_indi_scores,\
+                   arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs,arc_coop_scores, mb_is_goal, mb_is_collision
 
 
 def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.99, lam=0.95, log_interval=1, nprocs=32,
           nsteps=20, nstack=1, ent_coef=0.01, vf_coef=0.5, vf_fisher_coef=1.0, lr=0.25, max_grad_norm=0.5,
-          kfac_clip=0.001, save_interval=1000, lrschedule='linear', dis_lr=0.001, disc_type='decentralized',
+          kfac_clip=0.001, save_interval=100, lrschedule='linear', dis_lr=0.001, disc_type='decentralized',
           bc_iters=500, identical=None, l2=0.1, d_iters=1, rew_scale=0.1):
     tf.reset_default_graph()
     set_global_seeds(seed)
@@ -660,16 +694,18 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
         #lld_loss = model.clone(e_obs, e_a)
 
 
-    mb_arc_indi_obs = [np.array([]) for _ in range(num_agents)]
-    mb_arc_indi_actions = [np.array([]) for _ in range(num_agents)]
-    mb_arc_indi_obs_next = [np.array([]) for _ in range(num_agents)]
-    mb_arc_indi_all_obs = np.array([]) 
-    mb_arc_indi_values = [np.array([]) for _ in range(num_agents)]
-    mb_arc_coop_obs = [np.array([]) for _ in range(num_agents)]
-    mb_arc_coop_actions = [np.array([]) for _ in range(num_agents)]
-    mb_arc_coop_obs_next = [np.array([]) for _ in range(num_agents)]
-    mb_arc_coop_all_obs = np.array([])
-    mb_arc_coop_values = [np.array([]) for _ in range(num_agents)]
+    mb_arc_indi_obs = [[[] for _ in range(MAX_ARC)] for _ in range(num_agents)]
+    mb_arc_indi_actions = [[[] for _ in range(MAX_ARC)] for _ in range(num_agents)]
+    mb_arc_indi_obs_next = [[[] for _ in range(MAX_ARC)] for _ in range(num_agents)]
+    mb_arc_indi_all_obs = [[] for _ in range(MAX_ARC)] 
+    mb_arc_indi_values = [[[] for _ in range(MAX_ARC)] for _ in range(num_agents)]
+    mb_arc_indi_scores = [np.ones(MAX_ARC)*-1000 for _ in range(num_agents)]
+    mb_arc_coop_obs = [[[] for _ in range(MAX_ARC)] for _ in range(num_agents)]
+    mb_arc_coop_actions = [[[] for _ in range(MAX_ARC)] for _ in range(num_agents)]
+    mb_arc_coop_obs_next = [[[] for _ in range(MAX_ARC)] for _ in range(num_agents)]
+    mb_arc_coop_all_obs = [[] for _ in range(MAX_ARC)]
+    mb_arc_coop_values = [[[] for _ in range(MAX_ARC)] for _ in range(num_agents)]
+    mb_arc_coop_scores = [np.ones(MAX_ARC)*-1000 for _ in range(num_agents)]
     archive_indi_num = np.zeros(num_agents)
     archive_coop_num = np.zeros(num_agents)
 
@@ -679,8 +715,8 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
     for update in range(1, total_timesteps // nbatch + 1):
         obs, obs_next, states, rewards, report_rewards, masks, actions, values, all_obs, all_nobs,\
         mh_actions, mh_all_actions, mh_rewards, mh_true_rewards, mh_true_returns,\
-        arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs,\
-        arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, mh_is_goal, mh_is_collision = runner.run()
+        arc_indi_obs, arc_indi_obs_next, arc_indi_actions, arc_indi_values, arc_indi_all_obs,arc_indi_scores,\
+        arc_coop_obs, arc_coop_obs_next, arc_coop_actions, arc_coop_values, arc_coop_all_obs, arc_coop_scores, mh_is_goal, mh_is_collision = runner.run()
 
         total_loss = np.zeros((num_agents, d_iters))
 
@@ -698,23 +734,8 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
         else:
             buffer = Dset(mh_obs, mh_actions, mh_obs_next, all_obs, mh_values, randomize=True, num_agents=num_agents,
                           nobs_flag=True)
-        for k in range(num_agents):
-            if not arc_indi_obs[k]: continue
-            mb_arc_indi_obs[k] = np.array(mb_arc_indi_obs[k].tolist() + arc_indi_obs[k])[-100:, :]
-            mb_arc_indi_actions[k] = np.array(mb_arc_indi_actions[k].tolist() + arc_indi_actions[k])[-100:, :]
-            mb_arc_indi_obs_next[k] = np.array(mb_arc_indi_obs_next[k].tolist() + arc_indi_obs_next[k])[-100:, :]
-            mb_arc_indi_all_obs = np.array(mb_arc_indi_all_obs.tolist() + arc_indi_obs[k])[-100:, :]
-            mb_arc_indi_values[k] = np.array(mb_arc_indi_values[k].tolist() + arc_indi_values[k])[-100:]
-            archive_indi_num[k] += len(arc_indi_obs[k])/nsteps
 
-            if not arc_coop_obs[k]: continue
-            mb_arc_coop_obs[k] =  np.array(mb_arc_coop_obs[k].tolist() + arc_coop_obs[k])[-100:, :]
-            mb_arc_coop_actions[k] = np.array(mb_arc_coop_actions[k].tolist() + arc_coop_actions[k])[-100:, :]
-            mb_arc_coop_obs_next[k] = np.array(mb_arc_coop_obs_next[k].tolist() + arc_coop_obs_next[k])[-100:, :]
-            mb_arc_coop_all_obs = np.array(mb_arc_coop_all_obs.tolist() + arc_coop_obs[k])[-100:, :]
-            mb_arc_coop_values[k] = np.array(mb_arc_coop_values[k].tolist() + arc_coop_values[k])[-100:]
-            archive_coop_num[k] += len(arc_coop_obs[k])/nsteps
-        
+
 
         d_minibatch = nenvs * nsteps
         d_minibatch_quarter = int(d_minibatch/4)
@@ -729,9 +750,8 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             else:
                 e_obs = None
             g_obs, g_actions, g_nobs, g_all_obs, _ = buffer.get_next_batch(batch_size=d_minibatch)
-            print(expert_batch)
+            print(f'[exp, indi, coop] = {expert_batch}')
 
-                
             e_obs2 = []
             e_nobs2 = []
             g_obs2 = []
@@ -823,8 +843,6 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
                     logger.record_tabular("policy_entropy %d" % k, float(policy_entropy[k]))
                     logger.record_tabular("policy_loss %d" % k, float(policy_loss[k]))
                     logger.record_tabular("value_loss %d" % k, float(value_loss[k]))
-                    logger.record_tabular("archive_indi_num %d" %k, int(archive_indi_num[k]))
-                    logger.record_tabular("archive_coop_num %d" %k, int(archive_coop_num[k]))
                     try:
                         logger.record_tabular('pearson %d' % k, float(
                             pearsonr(report_rewards[k].flatten(), mh_true_returns[k].flatten())[0]))
@@ -846,12 +864,6 @@ def learn(policy, expert, env, env_id, seed, total_timesteps=int(40e6), gamma=0.
             savepath = osp.join(logger.get_dir(), 'm_%.5i' % update)
             print('Saving to', savepath)
             model.save(savepath)
-            pkl.dump(mb_arc_indi_obs, open(osp.join(logger.get_dir(), f'archive_indi_obs{update:05}.pkl'), 'wb'))
-            pkl.dump(mb_arc_indi_actions, open(osp.join(logger.get_dir(), f'archive_indi_actions{update:05}.pkl'), 'wb'))
-            pkl.dump(mb_arc_indi_obs_next, open(osp.join(logger.get_dir(), f'archive_indi_obs_next{update:05}.pkl'), 'wb'))
-            pkl.dump(mb_arc_coop_obs, open(osp.join(logger.get_dir(), f'archive_coop_obs{update:05}.pkl'), 'wb'))
-            pkl.dump(mb_arc_coop_actions, open(osp.join(logger.get_dir(), f'archive_coop_actions{update:05}.pkl'), 'wb'))
-            pkl.dump(mb_arc_coop_obs_next, open(osp.join(logger.get_dir(), f'archive_coop_obs_next{update:05}.pkl'), 'wb'))
             if disc_type == 'decentralized' or disc_type == 'decentralized-all':
                 for k in range(num_agents):
                     savepath = osp.join(logger.get_dir(), 'd_%d_%.5i' % (k, update))

@@ -20,7 +20,7 @@ from gym import spaces
 
 ARC_INDI_THRESHOLD = 250
 GOAL_STEP_THRESHOLD = 15 
-MAX_ARC = 3
+MAX_ARC = 1000
 
 def sort_arc(arc, scores):
     idxs = sorted(range(len(scores)), key=lambda i: scores[i])
@@ -388,22 +388,26 @@ class Runner(object):
         self.dones = [np.array([False for _ in range(self.nenv)]) for k in range(self.num_agents)]
         self.update_obs(obs)
         self.actions = [np.zeros((self.nenv, )) for _ in range(self.num_agents)]
+        reset_steps = [] 
 
-        traj_index = 0
         for n in range(self.nsteps):
             actions, values, states = self.model.step(self.obs, self.actions)
             self.actions = actions
 
-            not_all_done = False 
-            for k in range(self.num_agents):
-                if not self.dones[0][k]:
-                    not_all_done = True
-            if not not_all_done:
-                # 初期化されると観測値に0.0が帰ってくるのでここで捨てる
-                traj_index += 1
-                obs = self.env.reset()
-                self.update_obs(obs)
-                #self.info = [{} for _ in range(self.nenv)]
+            """
+            for l in range(self.nenv):
+                not_all_done = False 
+                for k in range(self.num_agents):
+                    if not self.dones[k][l]:
+                            not_all_done = True
+                if not not_all_done:
+                    # 初期化されると観測値に0.0が帰ってくるのでここで捨てる
+                    for k in range(self.num_agents):
+                        for l in range(self.nenv):
+                            self.dones[k][l] = True
+                    obs = self.env.reset()
+                    self.update_obs(obs)
+                    reset_steps.append(n)"""
 
             for k in range(self.num_agents):
                 mb_obs[k].append(np.copy(self.obs[k]))
@@ -471,17 +475,6 @@ class Runner(object):
             for k in range(self.num_agents):
                 mb_rewards[k].append(rewards[k])
                 mb_report_rewards[k].append(report_rewards[k])
-                # mb_rewards[k].append([rewards[k]])
-                # mb_report_rewards[k].append([report_rewards[k]])
-
-                """
-                tf = np.array(['n' in info[i].keys() for i in range(len(info))])
-                if tf.all():
-                    mb_is_goal[k].append([info[i]['n'][k]['isGoal'] for i in range(len(info))])
-                    mb_is_collision[k].append([info[i]['n'][k]['isCollision'] for i in range(len(info))])
-                else:
-                    mb_is_goal[k].append([[False, False] for _ in range(self.nenv)])
-                    mb_is_collision[k].append([[False, False] for _ in range(self.nenv)])"""
            
 
             self.states = states
@@ -531,9 +524,7 @@ class Runner(object):
             mb_dones[k] = mb_dones[k][:, 1:]
             mb_is_goal[k] = np.asarray(mb_is_goal[k], dtype=np.bool).swapaxes(1, 0)
             mb_is_collision[k] = np.asarray(mb_is_collision[k], dtype=np.bool).swapaxes(1, 0)
-        #print(mb_obs[0])
-        #print(traj_obs[0][0])
-        #print(mb_is_goal[0][0])
+
         for k in range(self.num_agents):
             ep_rews = []
             cols = []
@@ -546,28 +537,17 @@ class Runner(object):
                 if len(all_dones_idx)==0:
                     continue
                 prev_ad = 0
-                traj_len = []
+                traj_len = [[] for _ in range(self.num_agents)]
                 for ad in all_dones_idx:
                     for k2 in range(self.num_agents):
-                        traj_len.append(ad + 1 - np.sum(mb_dones[k2][t][prev_ad:ad]))
-                    preb_ad = ad+1
+                        traj_len[k2].append(ad - prev_ad + 1 - np.sum(mb_is_goal[k2][t][prev_ad:ad]))
+                        #print(f'k2{k2}, t{t}, pad{prev_ad}, ad{ad}')
+                    prev_ad = ad+1
 
                 sprev = 0
                 for idx, s in enumerate(all_dones_idx):
                     traj_tf = np.array([False for _ in range(len(mb_dones[k][t]))])
-                    traj_tf[sprev:sprev+traj_len[k]] = True
-                    """print(f't:{t}, tf:{traj_tf}')
-                    print(f'tf shape: {traj_tf.shape}')
-                    print(mb_is_collision[k])
-                    print(f'col shape: {mb_is_collision[k].shape}')
-                    print(f'dones shape: {mb_dones[k].shape}')
-                    print(f'true_rewards shape: {mb_true_rewards[k].shape}')
-                    print(f'is_goal shape: {mb_is_goal[k].shape}')
-                    print(f'traj_obs shape: {traj_obs[k].shape}')
-                    print(mb_dones[k])"""
-                    #traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs[k][t][tf]] 
-                    #print(traj_obs_round)
-                    #print(f't, k, sliceNum, length(length2): {t}, {k}, {s}, {np.sum(traj_tf)}({traj_len[k]})')
+                    traj_tf[sprev:sprev+traj_len[k][idx]] = True
 
                     mb_is_collision[k][t][traj_tf][-1] = False # 最後がTrueになっちゃうので強制的に変更
                     ep_rew = np.sum(np.array(mb_true_rewards[k][t][traj_tf]))
@@ -580,18 +560,49 @@ class Runner(object):
                         ep_rews.append(ep_rew)
                         cols.append(col)
                         goals.append(goal)
-                        steps.append(traj_len[k])
-
-                    if traj_len[0] < 3 or traj_len[1] < 3:
+                        steps.append(traj_len[k][idx])
+                        traj = traj_obs[k][t][traj_tf]
+                        traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj] 
+                        traj_obs_round[0] = [-0.9, 0.9] if k==0 else [0.9, 0.9]
+                        if goal>1:
+                            print(f"ep_rew{k}{t}: {ep_rew}, goal:{goal}, col{col}")
+                            traj = traj_obs[0][t][traj_tf]
+                            traj_obs_round0 = [[round(num[0], 2), round(num[1], 2)]  for num in traj] 
+                            print(f"traj_obs_round0: {traj_obs_round0}")
+                            traj = traj_obs[1][t][traj_tf]
+                            traj_obs_round1 = [[round(num[0], 2), round(num[1], 2)]  for num in traj] 
+                            print(f"traj_obs_round1: {traj_obs_round1}")
+                            print(f'len {traj_len[k][idx]}')
+                            print(f'dones0 {mb_dones[0][t]}')
+                            print(f'dones1 {mb_dones[1][t]}')
+                            print(f'goal0 {mb_is_goal[0][t][traj_tf]}')
+                            print(f'goal1 {mb_is_goal[1][t][traj_tf]}')
+                            print(f'reset {reset_steps}')
+                            print(f'sprev{sprev}, s{s}, s+{sprev+traj_len[k][idx]}')
+                            print(f'{mb_dones[k][t][sprev:s]}')
+                            input()
+                    if goal<1:
+                        continue
+                    if len(traj_len[0]) <= idx or len(traj_len[1]) <= idx:
                         continue
 
-                    if traj_len[0] < GOAL_STEP_THRESHOLD and traj_len[1] < GOAL_STEP_THRESHOLD: # if agent reached goal, they archive thier info
+                    if traj_len[0][idx] < GOAL_STEP_THRESHOLD and traj_len[1][idx] < GOAL_STEP_THRESHOLD: # if agent reached goal, they archive thier info
 
                         traj = traj_obs[k][t][traj_tf]
                         traj_obs_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj] 
+                        traj_obs_round[0] = [-0.9, 0.9] if k==0 else [0.9, 0.9]
                         arc_indi_obs[k].append(traj_obs_round)
-                        arc_indi_actions[k].append(multionehot(np.copy(mb_actions[k][t][traj_tf]), self.n_actions[k]).tolist())
+                        if goal>1:
+                            print(f"ep_rew{k}{t}: {ep_rew}, goal:{goal}, col{col}")
+                            print(f"traj_obs_round: {traj_obs_round}")
+                            print(f'len {traj_len[k][idx]}')
+                            print(f'dones0 {mb_dones[0][t]}')
+                            print(f'dones1 {mb_dones[1][t]}')
+                            print(f'sprev{sprev}, s{s}, s+{sprev+traj_len[k][idx]}')
+                            print(f'{mb_dones[k][t][sprev:s]}')
+                            input()
 
+                        arc_indi_actions[k].append(multionehot(np.copy(mb_actions[k][t][traj_tf]), self.n_actions[k]).tolist())
                         arc_indi_values[k].append((mb_values[k][t][traj_tf]).tolist())
                         traj_obs_next_round = [[round(num[0], 2), round(num[1], 2)]  for num in traj_obs_next[k][t][traj_tf]] 
                         arc_indi_obs_next[k].append(traj_obs_next_round)
