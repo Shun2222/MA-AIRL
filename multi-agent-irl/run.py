@@ -1,7 +1,7 @@
 import os 
 
-for i in range(505, 506):
-    os.system(rf"python3 -m irl.mack.run_mack_aairl \
+for i in range(500, 530):
+    os.system(rf"python3 -m irl.mack.run_mack_gail2 \
                  --env simple_path_finding_jaciii \
                  --seed {i} \
                  --expert_path data/goal-done-test/checkpoint01100-1000tra.pkl\

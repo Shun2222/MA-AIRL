@@ -20,7 +20,7 @@ from gym import spaces
 
 ARC_INDI_THRESHOLD = 250
 GOAL_STEP_THRESHOLD = 15 
-MAX_ARC = 1000
+MAX_ARC = 100
 
 def sort_arc(arc, scores):
     idxs = sorted(range(len(scores)), key=lambda i: scores[i])
@@ -582,8 +582,10 @@ class Runner(object):
                             print(f'{mb_dones[k][t][sprev:s]}')
                             input()
                     if goal<1:
+                        sprev = s+1
                         continue
                     if len(traj_len[0]) <= idx or len(traj_len[1]) <= idx:
+                        sprev = s+1
                         continue
 
                     if traj_len[0][idx] < GOAL_STEP_THRESHOLD and traj_len[1][idx] < GOAL_STEP_THRESHOLD: # if agent reached goal, they archive thier info
@@ -609,7 +611,7 @@ class Runner(object):
                         arc_indi_scores[k].append(ep_rew)
                         col = np.sum(np.array(mb_is_collision[k][t][traj_tf]))
                         #if not any(mb_true_rewards[k][t]<=-100): # if agent reached goal without collision, they archive info
-                        if col==0: # if agent reached goal without collision, they archive info
+                        if col==0 and ep_rew>-100: # if agent reached goal without collision, they archive info
                             #arc_coop_obs[k].append((traj_obs[k][t]).tolist()
                             arc_coop_obs[k].append(traj_obs_round)
                             arc_coop_actions[k].append(multionehot(np.copy(mb_actions[k][t][traj_tf]), self.n_actions[k]).tolist())
